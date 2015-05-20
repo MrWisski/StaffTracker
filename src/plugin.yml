@@ -1,0 +1,12 @@
+name: StaffTracker
+main: net.mineyourmind.mrwisski.StaffTracker
+version: 0.1b
+author: MrWisski
+softdepend: [Essentials, VanishNoPacket,zPermissions]
+
+commands:
+   st:
+      description: StaffTracker help
+      usage: /st
+      
+permissions:

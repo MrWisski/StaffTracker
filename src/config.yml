@@ -1,0 +1,49 @@
+#DO NOT CHANGE, internal use only. Changing this will reset your entire config!
+configver: 4
+
+plugin:
+  enabled: true
+  usesql: true
+  usevanishnopacket: true
+  useessentials: true
+  usezperms: true
+#Debug mode, can get a wee bit spammy.
+  debug: true
+
+stafftracker:
+#how often do we update, in seconds.
+  updateInterval: 60
+  staffPerm: true
+  staffGroup: true
+  staffOp: true
+#The permission staff have that makes them Staff.
+  staffPerms: staff
+#The groups staff have that makes them staff. REQUIRES ZPERMS!
+  staffGroups:
+    -mod
+    -coadmin
+    -admin
+    -manager
+    -founder
+#Should the plugin ignore Operator status in the list?
+  ignoreOP: false
+#Should the plugin track staff online time?
+  trackOnTime: true
+  trackVanished: true
+  showVanished: false
+
+extra:
+  staffOnlySocialSpy: true
+
+mysql:
+  driver: com.mysql.jdbc.Driver
+  user: user
+  pass: resu
+  ip: 127.0.0.1
+  port: 3306
+  db: plugin_database
+  table: stafftracker
+#onNoConnect options :
+#retry - Does not abort if the database is unreachable. Will continue to attempt to reconnect.
+#fail - aborts SQL initialization if the database is unreachable. This will disable the plugin!
+  onNoConnect: retry
