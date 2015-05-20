@@ -60,7 +60,7 @@ public class SQLDB {
 			
 			resultSet = statement.executeQuery(query);
 			
-			statement.close();
+			statement.closeOnCompletion();
 			return resultSet;
 			
 		} catch (SQLException e) {

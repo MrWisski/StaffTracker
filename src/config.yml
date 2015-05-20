@@ -1,5 +1,5 @@
 #DO NOT CHANGE, internal use only. Changing this will reset your entire config!
-configver: 4
+configver: 5
 
 plugin:
   enabled: true
@@ -13,26 +13,25 @@ plugin:
 stafftracker:
 #how often do we update, in seconds.
   updateInterval: 60
+#How do we determine a player is a Staff Member?
   staffPerm: true
   staffGroup: true
   staffOp: true
-#The permission staff have that makes them Staff.
+#The permission staff have that makes them Staff. 
+#IMPORTANT NOTE : This is currently -A- permission. just one!
   staffPerms: staff
-#The groups staff have that makes them staff. REQUIRES ZPERMS!
+#The groups staff have that makes them staff. REQUIRES VAULT OR ESSENTIALS!
   staffGroups:
     -mod
     -coadmin
     -admin
     -manager
     -founder
-#Should the plugin ignore Operator status in the list?
+#Should the plugin ignore Operator status in the list, regardless of staffOp?
   ignoreOP: false
-#Should the plugin track staff online time?
-  trackOnTime: true
-  trackVanished: true
-  showVanished: false
 
 extra:
+#If true, any non-staff member will have socialspy removed!
   staffOnlySocialSpy: true
 
 mysql:

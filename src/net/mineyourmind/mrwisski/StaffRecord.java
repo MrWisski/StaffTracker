@@ -36,10 +36,11 @@ public class StaffRecord {
 	private long enterSocialSpy = 0;
 	private long loginTime = 0;
 	
+	
 	StaffRecord(UUID id, String name, String server, String group, boolean vanished, boolean creativemode, boolean socialspy){
 		this.uuid = id;
 		this.name = name;
-		this.group = group;
+		setGroup(group);
 		this.server = server;
 		setLoggedIn(true);
 		setVanish(vanished);
@@ -47,15 +48,39 @@ public class StaffRecord {
 		setSocialSpy(socialspy);
 	}
 	
+	/** This constructor is used from data pulled from the DB. */
+	StaffRecord(String id, String name, String server, long timeon, long timevanish, long timecreative, long timesocial){
+		this.uuid = UUID.fromString(id);
+		this.name = name;
+		this.server = server;
+		this.timeIn = timeon;
+		this.timeInVanish = timevanish;
+		this.timeInCreative = timecreative;
+		this.timeInSocialSpy = timesocial;
+		
+	}
+	
 	//////////////////////////////////
 	//SETTERS AND GETTERS - Pretty standard stuff here
 	//WARNING : You are entering a NO COMMENT ZONE ^_^
 	//////////////////////////////////
 	
+	//TODO : sanity checking on input before release, size limits, cleaning, etc.
+	
 	public String getGroup(){return group;}
+	public void setGroup(String group){
+		if(group != "")
+			this.group = group;
+		else
+			this.group = "Staff";
+	}
+	
 	public String getName(){return name;}
-	public String getServer(){return server;}
 	public UUID getUUID(){return uuid;}
+
+	public String getServer(){return server;}
+	public void setServer(String server){this.server = server;}
+
 	
 	public void setOp(boolean op){
 		this.isOP = op;
@@ -198,6 +223,11 @@ public class StaffRecord {
 	}
 
 	public boolean getSocialSpy(){return social;}
+	
+	public long getTimeOnline(){return this.timeIn;}
+	public long getTimeInVanish(){return this.timeInVanish;}
+	public long getTimeInCreative(){return this.timeInCreative;}
+	public long getTimeInSocialSpy(){return this.timeInSocialSpy;}
 	
 	/** force an update of all the various times tracked by this record. */
 	public void updateTime(){
