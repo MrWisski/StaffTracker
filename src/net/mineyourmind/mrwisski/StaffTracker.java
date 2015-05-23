@@ -51,16 +51,27 @@ import com.google.common.io.Files;
  *  Will test on 1.7.10 & 1.6.4 as well, prior to moving to beta.
  *  
  *  Pending Feature list :
+ *  	Move to SQL transactions BEFORE BETA.
+ *  	Test 1.7.10 & 1.6.4 BEFORE BETA.
+ *  	Copy current StaffRecord.toString() into a "detailed staff report" job, for /st showstats BEFORE BETA.
+ *  
+ *  After Beta :
  *  	Non-SQL storage method for standalone, non-networked servers.
  *  	Small class to handle tying together all the various permissions providers we could
  *  		encounter in the "wild" - this is more to neaten up the code than anything else
  *  	"Request" specific staff member to a server - /st need <member name>
  *  	"Request" specific staff group to a server - /st need <group name>
+ *  	"Request" anyone at all to a server - /st need
  *  	Track AFK status.
+ *  	Configure staff group DISPLAY names, (ie, perm is "mod", but displays as Moderator.
+ *  	Configure staff display color settings (mod blue, admin red, op yellow, etc).
+ *		Track /OI (open inventory) command usage.	
+ *		
  *  
  *  May become pending features :
  *  	Track item spawn ins from NEI cheat mode, /give, and creative?
  *  	Track /kill?
+ *  	WorldBorder bypass state?
  *  	
  *  
  * 
@@ -497,14 +508,33 @@ public final class StaffTracker extends JavaPlugin {
 			}
 		}
 		
-		if(debug) this.getLogger().info("DEBUG : register events");
-		//Setup our events
-		server.getPluginManager().registerEvents(new EventListener(), this);
+		//We need to see if we exited gracefully last time we shut down.
+		int retrycount = 0;
 		
-		//We set up our timer to run AFTER the first player logs in, so look for that
-		//bit of initialization in playerJoin()
+		while(this.recordsChecked == false){
+			if(debug) this.getLogger().info("DEBUG : Checking for outdated records, try #" + retrycount+1);
+			this.checkRecords();
+			
+			retrycount++;
+			if(retrycount > 3){
+				this.recordsChecked = true;
+				this.enabled = false;
+				if(debug) this.getLogger().info("DEBUG : Failed retry count on checkRecords() attempt. Disabling plugin :(");
+			}
+		}
 		
-		getLogger().info("StaffTracker enabled successfully!");
+		if(this.enabled){
+			if(debug) this.getLogger().info("DEBUG : register events");
+			//Setup our events
+			server.getPluginManager().registerEvents(new EventListener(), this);
+
+			//We set up our timer to run AFTER the first player logs in, so look for that
+			//bit of initialization in playerJoin()
+
+			getLogger().info("StaffTracker enabled successfully!");
+		} else {
+			getLogger().severe("Plugin is NOT ENABLED. This is likely due to a DB connection failure.");
+		}
 	}
  
 	/** Handles a request from the Bukkit server to disable the plugin - Server is generally
@@ -515,8 +545,9 @@ public final class StaffTracker extends JavaPlugin {
 		//Clean up database related stuff, if we're using it.
 		if(this.useSQL)
 			if(this.sqldb != null){
+				
 				this.sqldb.close();
-				//TODO : Save out all dirty StaffRecords
+				//TODO : Save out all StaffRecords
 			}
 		
 		this.enabled = false;
@@ -526,12 +557,12 @@ public final class StaffTracker extends JavaPlugin {
 	/** Displays the help command for this plugin */
 	private void commandHelp(CommandSender sender, String label){
 		//TODO : Colorize!
-		sender.sendMessage("StaffTracker Help :");
-		sender.sendMessage("~~~~~~~~~~~~~~~~~~~");
-		sender.sendMessage(label + " help - this screen");
-		if(debug) sender.sendMessage(label + " dumprec <playername> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
-		if(debug) sender.sendMessage(label + " updateall - Forces internal staff recordset to be updated.");
-
+		sender.sendMessage("§2Staff§aTracker §2Help :");
+		sender.sendMessage("§a~~~~~~~~~~~~~~~~~~~");
+		sender.sendMessage("§2/" + label + " help §a- This screen!");
+		if(debug) sender.sendMessage("§c/" + label + " dumprec <playername> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
+		if(debug) sender.sendMessage("§c/" + label + " updateall - Forces internal staff recordset to be updated.");
+		sender.sendMessage("§2/" + label + " list §a- Shows all online staff members.");
 	}
 	
 	/** Command to dump an internal StaffRecord - Only works if debug == true! */
@@ -542,7 +573,7 @@ public final class StaffTracker extends JavaPlugin {
 			if(staffInd.containsKey(args[1])){
 				sender.sendMessage(staffInd.get(args[1]).toString());
 			} else {
-				sender.sendMessage("Player is not logged into this server, or isn't detected as staff!");
+				sender.sendMessage("§cPlayer is not logged into this server, or isn't detected as staff!");
 			}
 			
 		} else {
@@ -564,6 +595,47 @@ public final class StaffTracker extends JavaPlugin {
 		}
 		
 	}
+	/** */
+	public void commandList(CommandSender sender){
+		if(debug) Log.info("DEBUG : commandList()");
+		if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.isStaff((Player)sender))){
+			if(debug) Log.info("== console, sender instanceof Player & isstaff()");
+			if(!sqldb.isConnected()){
+				if(!sqldb.connect()){
+					sender.sendMessage("§cSorry, couldn't establish a connection to the database. Please try again in a little while!");
+					return;
+				}				
+				
+			} 
+			
+			ResultSet rs = null;
+			Statement s = null;
+			try {
+				s = sqldb.getConnection().createStatement();
+				rs = s.executeQuery("select * from " + pluginConf.getString("mysql.table") + " where LOGGEDIN = true");
+				int numrec = 0;
+				while(rs.next()){
+					numrec++;
+					sender.sendMessage("§2" + rs.getString("PGROUP") + " §f| §a" + rs.getString("NAME") + "§f | §9" + rs.getString("SERVER"));
+				}
+				
+				if(numrec == 0){
+					//This makes sense because we may have it configurable that non-staff can
+					//access this command...
+					sender.sendMessage("§cSorry, no staff are online right now!");
+				} else {
+					sender.sendMessage("§2Displayed §a" + numrec + "§2 records.");
+				}
+				rs.close();
+				s.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			
+		} else {
+			sender.sendMessage("§cSorry, currently, only staff members can use this command.");
+		}
+	}
 	
 	/** Notification from Bukkit server that a command has been entered.*/
 	@Override
@@ -579,11 +651,14 @@ public final class StaffTracker extends JavaPlugin {
 					switch(args[0]){
 					case "dumprec":
 						if(debug) commandDumpRec(sender,args);
-						else sender.sendMessage("Command requires the plugin be in Debug mode!");
+						else sender.sendMessage("§cCommand requires the plugin be in Debug mode!");
 						break;
 					case "updateall":
 						if(debug) commandForceUpdateAllRecords(sender);
-						else sender.sendMessage("Command requires the plugin be in Debug mode!");
+						else sender.sendMessage("§cCommand requires the plugin be in Debug mode!");
+						break;
+					case "list":
+						commandList(sender);
 						break;
 					default:
 						commandHelp(sender, label);
@@ -606,6 +681,7 @@ public final class StaffTracker extends JavaPlugin {
 	 * @param Player p - the player that has joined
 	 * */
 	public void playerJoin(Player p){
+
 		if(debug) this.getLogger().info("DEBUG : playerJoin()");
 		if(this.firstLogin){
 			firstLogin = false;
@@ -613,40 +689,41 @@ public final class StaffTracker extends JavaPlugin {
 			//need to make it kinda make sense.
 			long interval = pluginConf.getLong("stafftracker.updateInterval") * 20;
 			Log.info("Starting update timer!");
-			
+
 			//start our timer!
 			@SuppressWarnings("unused")
 			BukkitTask updateTimer = new ScheduledTask(this).runTaskTimer(this, interval, interval);
 		}
-		
+
 		//Do we already have this player in the index?
 		if(staffInd.containsKey(p.getName())){
-			
-			StaffRecord rec = staffInd.get(p.getName());
-			
-			if(rec.getLoggedIn()){
-				Log.warning("Staff member " + p.getName() + "just logged in...and the player is marked already as logged in. We've missed the exit event, somehow.");
-				//TODO Decide what to do in this case :(
-			} else {
-				rec.setLoggedIn(true);
-				boolean isVanished = false;
-				//get the vanish state.
-				if(pluginConf.getBoolean("plugin.usevanishnopacket")){
-					isVanished = this.vanishMan.isVanished(p);
-				}
-				if(pluginConf.getBoolean("plugin.useessentials")){
-					List<String> vp = this.essentials.getVanishedPlayers();
-					if(vp.contains(p.getName())){
-						isVanished = true;
-					}
-				}
-				
-				rec.setCreative(p.getGameMode() == GameMode.CREATIVE);
-				rec.setVanish(isVanished);
-				rec.setSocialSpy(essentials.getUser(p).isSocialSpyEnabled());
 
-				staffInd.put(p.getName(), rec);
+			StaffRecord rec = staffInd.get(p.getName());
+
+			if(rec.getLoggedIn()){
+				Log.warning("Staff member " + p.getName() + "just logged in...and the player is marked already as logged in in the staff record. We've missed the exit event, somehow.");
+				//TODO Decide what to do in this case :(
+			} 
+			
+			rec.setLoggedIn(true);
+			boolean isVanished = false;
+			//get the vanish state.
+			if(pluginConf.getBoolean("plugin.usevanishnopacket")){
+				isVanished = this.vanishMan.isVanished(p);
 			}
+			if(pluginConf.getBoolean("plugin.useessentials")){
+				List<String> vp = this.essentials.getVanishedPlayers();
+				if(vp.contains(p.getName())){
+					isVanished = true;
+				}
+			}
+
+			rec.setCreative(p.getGameMode() == GameMode.CREATIVE);
+			rec.setVanish(isVanished);
+			rec.setSocialSpy(essentials.getUser(p).isSocialSpyEnabled());
+
+			staffInd.put(p.getName(), rec);
+
 		} else {
 
 			if(!isStaff(p)){
@@ -667,10 +744,22 @@ public final class StaffTracker extends JavaPlugin {
 			if(this.recordExists(p.getName())){
 				//OOOH. well, lets pull it.
 				r = this.pullRecordFromDB(p);
+				if(debug) Log.info("Pulled timeon from db = " + r.getTimeOnline());
+				
 				//If there's an error, or we couldn't connect to the db (waaaat)
 				//the record will be null, and we'll catch it down the below.
 				//FIXME : catch it here, flag it, run a temporary copy, and then merge with the DB version once we can connect.
 				if(r != null){
+					if(debug) Log.info("DEBUG : loggedin : " + (r.getLoggedIn() ? "yes" : "no") + " server : " + r.getServer()); 
+					if(r.getLoggedIn() && r.getServer() != StaffTracker.MCServerName){
+						//:facepalm: SOMEONE is logged in on another server.
+						//So, we ghost this record, and wait for the other log in session
+						//to terminate, since its likely either a crash (which will update
+						//when the server comes back up, or a dual login, and we don't want
+						//to lose any data with competing writes.
+						r.setGhost();
+						if(debug) Log.warning("Record for player " + r.getName() + " is ghosting do to a login on another server!");
+					}
 					r.setServer(MCServerName);
 					r.setOp(p.isOp());
 
@@ -688,19 +777,22 @@ public final class StaffTracker extends JavaPlugin {
 							sgroup = "";
 						}
 					}
-					
+
 					r.setGroup(sgroup);
 					r.setLoggedIn(true);
-					
+
 					//At this point, we can pass this record off to update record to
 					//fill in the rest of the blanks.
 					this.updateRecord(p, r);
-					
-					if(debug) Log.info("DEBUG : Retrieved staff member : " + r.getName() + "(" + r.getUUID().toString() + ") from database.");
-				
+
+					if(r.getGhost()){
+						if(debug) Log.info("DEBUG : Retrieved staff member : " + r.getName() + "(" + r.getUUID().toString() + ") from database. *** IN GHOST MODE ***");
+					} else {
+						if(debug) Log.info("DEBUG : Retrieved staff member : " + r.getName() + "(" + r.getUUID().toString() + ") from database.");
+					}
 				}
 			}
-			
+
 			if(r == null){
 
 				//If we're using staff Groups, it'd be nice to add which group they're in
@@ -723,14 +815,14 @@ public final class StaffTracker extends JavaPlugin {
 					sgroup = "Staff";				
 
 				//We now have enough information to build our index entry.
-				r = new StaffRecord(p.getUniqueId(), p.getName(), MCServerName, sgroup, false, p.getGameMode() == GameMode.CREATIVE, essentials.getUser(p).isSocialSpyEnabled());
+				r = new StaffRecord(false,p.getUniqueId(), p.getName(), MCServerName, sgroup, false, p.getGameMode() == GameMode.CREATIVE, essentials.getUser(p).isSocialSpyEnabled());
 
 				r.setOp(p.isOp());		
-				
+
 				//we can now send this off to UpdateRecord to fill in all the rest.
 				
 				this.updateRecord(p, r);
-				
+
 				if(debug) Log.info("DEBUG : Added staff member : " + r.getName() + "(" + r.getUUID().toString() + ")");
 			}
 		}
@@ -781,13 +873,58 @@ public final class StaffTracker extends JavaPlugin {
 		Enumeration<StaffRecord> staffe = staffInd.elements();
 		while(staffe.hasMoreElements()){
 			StaffRecord r = staffe.nextElement();
-			if(r.getLoggedIn()){
+			//Standard expected record - logged in, and not ghosted
+			if(r.getLoggedIn() && !r.getGhost()){
 				this.updateRecord(server.getPlayer(r.getName()), r);
 				r.setCommitting(true);
 				staffInd.put(r.getName(), r);
 				this.pushRecordToDB(r);
 				r.setCommitting(false);
 				staffInd.put(r.getName(), r);
+			//Logged in, and ghosted.
+			} else if(r.getLoggedIn() && r.getGhost()){
+				//we need to merge the DB records with this one, so lets try to merge them!
+				StaffRecord r2 = this.pullRecordFromDB(server.getPlayer(r.getName()));
+				//test for DB error
+				if(r2 != null){ 
+					//test for record existance (did we pull a nonexistant record?
+					if(!r2.isEmpty()){ 
+						if(r2.getLoggedIn() && r2.getServer() != StaffTracker.MCServerName){
+							//Erroring state still exists.
+							if(debug) Log.warning("Player " + r2.getName() + " is still logged in to server " + r2.getServer());
+							
+						} else {
+
+							if(r.unGhost(r2.getName(), r2.getTimeOnline(), r2.getTimeInVanish(), r2.getTimeInCreative(), r2.getTimeInSocialSpy())){
+								//records merged! Update record normally.
+								this.updateRecord(server.getPlayer(r.getName()), r);
+								r.setCommitting(true);
+								staffInd.put(r.getName(), r);
+								this.pushRecordToDB(r);
+								r.setCommitting(false);
+								staffInd.put(r.getName(), r);
+								if(this.debug) Log.info("DEBUG : Unghosted record for " + r.getName() + "!");
+							} else {
+								Log.warning("WARNING : Unghosting record for " + r.getName() + " failed! This data is likely a lost cause, but will try again lately.");
+							}
+						}
+
+						
+					} else {
+						// Somewhere, somehow, we ghosted this record when we shouldn't have.
+						// If our logic is bulletproof, then we'll never get here.
+						// However, this is a fail of the highest order, if we get here.
+						Log.severe("********************************************************");
+						Log.severe("Fail detected : We ghosted a record we can never unghost!");
+						Log.severe("Affected player : " + r.getName());
+						Log.severe("Leaving record in play - its REALLY imporant this is addressed!");
+						Log.severe("********************************************************");
+					}
+				} else {
+					if(this.debug) Log.info("DEBUG : Failed to unghost record for " + r.getName() + " : Will try again next update!");
+
+				}
+			//NOT logged in. :|
 			} else {
 				//try to push this record to the DB again.
 				if(pushRecordToDB(r)){
@@ -810,7 +947,55 @@ public final class StaffTracker extends JavaPlugin {
 	///////////////////////////////////////////////////////////////////////////////////
 	// HELPER FUNCTIONS
 	///////////////////////////////////////////////////////////////////////////////////
+	public boolean recordsChecked = false;
+	
+	/** This function should ONLY be run on plugin startup! It checks to see if we exited gracefully last shutdown, and if not, closes the records out.*/
+	private void checkRecords(){
+		if(debug) Log.info("DEBUG : checkRecords()");
+		
+		Statement s = null;
+		ResultSet rs = null;
+		
+		//Make sure we're connected to the DB.
+		if(!sqldb.connected){
+			if(!sqldb.connect()){
+				//FIXME : If this returns null because we can't connect to the DB, and we use this returning null to signify that there's no record in the DB, we have an issue - Need to make this NOT AN ISSUE. :(
+				recordsChecked = false;
+				if(debug) Log.info("DEBUG : Couldn't connect to DB. This is kind of critical that we check this - If we can't connect, Plugin will be disabled :(");
+				return;
+			}
+		}
+		
+		try{
+			//read in all DB records from this server, where loggedin = true.
+			s = sqldb.getConnection().createStatement();
+			rs = s.executeQuery("select * from " + pluginConf.getString("mysql.table") + " where SERVER = '" + MCServerName + "' AND LOGGEDIN = true");
+			while(rs.next()){
+				
+				StaffRecord r = new StaffRecord(false, rs.getString("PUUID"), rs.getString("NAME"), rs.getString("SERVER"), rs.getBoolean("OP"), rs.getString("PGROUP"), rs.getBoolean("LOGGEDIN"),rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"));
+				r.setCreative(false);
+				r.setLoggedIn(false);
+				r.setVanish(false);
+				r.setSocialSpy(false);
+				//Write it to the staff Index.
+				this.staffInd.put(r.getName(), r);
+					
+			} 
 
+			rs.close();
+			s.close();
+			// This is kind of important - since we check it in update all records ;)
+			this.recordsChecked = true;
+			
+			//Now, we write the records back out to the DB, with the correct information.
+			//Since noone is online, this will clear out the staff index.
+			this.updateAllRecords();
+			
+		} catch(SQLException e){
+			e.printStackTrace();
+		}
+	}
+	
 	private boolean recordExists(String name){
 		if(debug) Log.info("DEBUG : recordExists()");
 		Statement s = null;
@@ -841,7 +1026,7 @@ public final class StaffTracker extends JavaPlugin {
 		//Make sure we're connected to the DB.
 		if(!sqldb.connected){
 			if(!sqldb.connect()){
-				//FIXME : If this returns null because we can't connect to the DB, and we use this returning null to signify that there's no record in the DB, we have an issue - Need to make this NOT AN ISSUE. :(
+				//FIXED : null on error, empty record on no-record state.
 				return null;
 			}
 		}
@@ -849,7 +1034,7 @@ public final class StaffTracker extends JavaPlugin {
 			s = sqldb.getConnection().createStatement();
 			rs = s.executeQuery("select * from " + pluginConf.getString("mysql.table") + " where name = '" + p.getName() + "'");
 			if(rs.next()){
-				StaffRecord r = new StaffRecord(rs.getString("PUUID"), rs.getString("NAME"), StaffTracker.MCServerName, rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"));
+				StaffRecord r = new StaffRecord(false, rs.getString("PUUID"), rs.getString("NAME"), rs.getString("SERVER"), rs.getBoolean("OP"), rs.getString("PGROUP"), rs.getBoolean("LOGGEDIN"),rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"));
 				rs.close();
 				s.close();
 				return r;
@@ -859,10 +1044,11 @@ public final class StaffTracker extends JavaPlugin {
 				rs.close();
 				s.close();
 				
-				return null;
+				//returns a StaffRecord with .empty == true;
+				return new StaffRecord();
 			}
 		} catch(SQLException e){
-			
+			e.printStackTrace();
 		}
 		
 		return null;
@@ -901,7 +1087,7 @@ public final class StaffTracker extends JavaPlugin {
 								" TIMESOCIALSPY = ?, " +
 								" PGROUP = ? " + 
 								"where NAME = ?");
-				update.setString(1, MCServerName);
+				update.setString(1, r.getServer());
 				update.setBoolean(2, r.getOp());
 				update.setBoolean(3, r.getLoggedIn());
 				update.setBoolean(4, r.getVanish());
@@ -934,7 +1120,7 @@ public final class StaffTracker extends JavaPlugin {
 						"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 				update.setString(1, r.getUUID().toString());
 				update.setString(2, r.getName());
-				update.setString(3, MCServerName);
+				update.setString(3, r.getServer());
 				update.setString(4, r.getGroup());
 				update.setBoolean(5, r.getOp());
 				update.setBoolean(6, r.getLoggedIn());
@@ -1003,6 +1189,7 @@ public final class StaffTracker extends JavaPlugin {
 	/** Helper function to update a staffmember record entry */
 	private void updateRecord(Player p, StaffRecord r){
 		if(debug) this.getLogger().info("DEBUG : updateRecord()");
+		if(debug) Log.info("DEBUG : r.timein = " + r.getTimeOnline());
 		if(r.getCommitting()){
 			if(debug) this.getLogger().info("DEBUG : This record for " + r.getName() + " is being commited to the DB. No need to update it!");
 			return;
@@ -1053,6 +1240,8 @@ public final class StaffTracker extends JavaPlugin {
 
 		//finally, update the record. otherwise, what's the point, right?
 		staffInd.put(p.getName(), r);
+		
+		StaffTracker.Log.info("after put : time in = " + r.getTimeOnline());
 	}
 
 	/** Getter for the class instance

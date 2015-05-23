@@ -8,6 +8,8 @@ import org.apache.commons.lang.time.DurationFormatUtils;
 
 /** Class containing all the data about a particular staff member we track! */
 public class StaffRecord {
+	private boolean debug = true;
+	
 	private String name = "Unknown Player";
 	private UUID uuid;
 	private String server = "Unknown Server";
@@ -22,22 +24,34 @@ public class StaffRecord {
 	private long timeInVanish = 0;
 	private long timeInCreative = 0;
 	private long timeInSocialSpy = 0;
-	private long timeIn = 0;
+	private long timeInGame = 0;
 
-	// Has the record changed since the last SQL out?
-	private boolean dirty = true;
+	// Is this record empty? used as a status return, as a null record is an error condition.
+	private boolean empty = false;
 	// If this record is currently being pushed to the SQL - 
 	// used externally to avoid nasty things like trying to get
 	// the status of an offline player.
 	private boolean isCommiting = false;
+	
+	//Flag for record ghosting - 
+	//If this is a ghost record, it never gets commited to db.
+	//In order to come out of ghost mode, we have to supply data from the DB, which will be
+	//merged in with the current data.
+	//Use ghost mode when we have a DB connection failure when we're trying to retrieve records
+	//or when the data in the DB indicates we already have a connection elsewhere.
+	private boolean ghost = false;
 	
 	private long enterVanish = 0;
 	private long enterCreative = 0;
 	private long enterSocialSpy = 0;
 	private long loginTime = 0;
 	
+	StaffRecord(){
+		empty = true;
+	}
 	
-	StaffRecord(UUID id, String name, String server, String group, boolean vanished, boolean creativemode, boolean socialspy){
+	StaffRecord(boolean isGhost, UUID id, String name, String server, String group, boolean vanished, boolean creativemode, boolean socialspy){
+		this.ghost = isGhost;
 		this.uuid = id;
 		this.name = name;
 		setGroup(group);
@@ -49,14 +63,46 @@ public class StaffRecord {
 	}
 	
 	/** This constructor is used from data pulled from the DB. */
-	StaffRecord(String id, String name, String server, long timeon, long timevanish, long timecreative, long timesocial){
+	StaffRecord(boolean isGhost, String id, String name, String server, boolean isOp, String group, boolean isOnline,long timeon, long timevanish, long timecreative, long timesocial){
+		StaffTracker.Log.info("StaffRecord : passed timeon is : " + timeon);
+		this.ghost = isGhost;
 		this.uuid = UUID.fromString(id);
 		this.name = name;
 		this.server = server;
-		this.timeIn = timeon;
-		this.timeInVanish = timevanish;
-		this.timeInCreative = timecreative;
-		this.timeInSocialSpy = timesocial;
+		this.isOP = isOp;
+		this.group = group;
+		this.setLoggedIn(isOnline);
+		if(isGhost){
+			//If we're ghosting, ignore any time in data - this will be overwritten later when
+			//we merge. we ONLY care about the total time for THIS SESSION.
+			this.timeInGame = 0;
+			this.timeInVanish = 0;
+			this.timeInCreative = 0;
+			this.timeInSocialSpy = 0;
+		} else {
+			this.timeInGame = timeon;
+			this.timeInVanish = timevanish;
+			this.timeInCreative = timecreative;
+			this.timeInSocialSpy = timesocial;
+			
+		}
+		
+	}
+	
+	public boolean unGhost(String name, long timeon, long timevanish, long timecreative, long timesocial){
+		StaffTracker.Log.info("unGhost : passed timeon is : " + timeon);
+		if(this.name.equals(name) && this.ghost){
+			this.timeInGame += timeon;
+			this.timeInVanish += timevanish;
+			this.timeInCreative += timecreative;
+			this.timeInSocialSpy += timesocial;
+			this.ghost = false;
+			return true;
+		} else {
+			StaffTracker.Log.warning("this.name = [" + this.name + "] passed in name = [" + name + "]");
+			StaffTracker.Log.warning("this.ghost = " + (this.ghost ? "true" : "false"));
+			return false;
+		}
 		
 	}
 	
@@ -64,8 +110,12 @@ public class StaffRecord {
 	//SETTERS AND GETTERS - Pretty standard stuff here
 	//WARNING : You are entering a NO COMMENT ZONE ^_^
 	//////////////////////////////////
-	
 	//TODO : sanity checking on input before release, size limits, cleaning, etc.
+	
+	public boolean isEmpty(){return this.empty;}
+	
+	public boolean getGhost(){return ghost;}
+	public void setGhost(){ghost = true;}
 	
 	public String getGroup(){return group;}
 	public void setGroup(String group){
@@ -84,7 +134,7 @@ public class StaffRecord {
 	
 	public void setOp(boolean op){
 		this.isOP = op;
-		dirty = true;
+		
 	}
 	public boolean getOp(){
 		return this.isOP;
@@ -93,36 +143,43 @@ public class StaffRecord {
 	public void setCommitting(boolean status){ this.isCommiting = status;}
 	public boolean getCommitting(){return this.isCommiting;}
 	
-	public boolean getDirty(){return dirty;}
-	
 	public boolean getLoggedIn(){return loggedIn;}
+	
 	public void setLoggedIn(boolean state){
+		if(debug) StaffTracker.Log.info("setloggedin() timeingame = " + this.timeInGame);
+		if(debug) StaffTracker.Log.info("login time = " + this.loginTime);
+		if(debug) StaffTracker.Log.info("sys   time = " + System.currentTimeMillis());
 		if(loggedIn != state){
+			if(debug) StaffTracker.Log.info("loggedin != state");
 			if(state){
+				if(debug) StaffTracker.Log.info("state == true");
 				loggedIn = true;
 				loginTime = System.currentTimeMillis();
-				dirty = true;
+				
 			} else {
+				if(debug) StaffTracker.Log.info("state == false");
 				loggedIn = false;
-				timeIn += (System.currentTimeMillis() - loginTime);
-				dirty = true;
+				timeInGame += (System.currentTimeMillis() - loginTime);
+				
 			}
-		} else if (loggedIn){
-			timeIn += (System.currentTimeMillis() - loginTime);
+		} else if (loggedIn == state && loggedIn == true ){
+			if(debug) StaffTracker.Log.info("loggedin == state, and loggedIn == true");
+			timeInGame += (System.currentTimeMillis() - loginTime);
 			loginTime = System.currentTimeMillis();
-			dirty = true;
+			
 		}
+		if(debug) StaffTracker.Log.info("setloggedin() timeingame = " + this.timeInGame);
 	}
 	
 	public void setLogOffAt(long time){
 		if(loggedIn){
 			if(time > loginTime)
-				timeIn += (time - loginTime);
+				timeInGame += (time - loginTime);
 			else
 				StaffTracker.Log.warning("setLogOffAt() time occurs BEFORE user logged in!");
 			
 			loggedIn = false;
-			dirty = true;
+			
 		}
 	}
 	
@@ -134,7 +191,7 @@ public class StaffRecord {
 				StaffTracker.Log.warning("setVanishOffAt() time occurs BEFORE user entered vanish!");
 			
 			vanished = false;
-			dirty = true;
+			
 		}
 	}
 	
@@ -143,16 +200,16 @@ public class StaffRecord {
 			if(state){
 				vanished = true;
 				enterVanish = System.currentTimeMillis();
-				dirty = true;
+				
 			} else {
 				vanished = false;
 				timeInVanish += (System.currentTimeMillis() - enterVanish);
-				dirty = true;
+				
 			}
 		} else if(vanished){
 			timeInVanish += (System.currentTimeMillis() - enterVanish);
 			enterVanish = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 	}
 	public boolean getVanish(){return vanished;}
@@ -166,7 +223,7 @@ public class StaffRecord {
 				StaffTracker.Log.warning("setCreativeOffAt() time occurs BEFORE user entered vanish!");
 			
 			creative = false;
-			dirty = true;
+			
 		}
 	}
 	
@@ -175,17 +232,17 @@ public class StaffRecord {
 			if(state){
 				creative = true;
 				enterCreative = System.currentTimeMillis();
-				dirty = true;
+				
 			} else {
 				//Player has left creative mode.
 				creative = false;
 				timeInCreative += (System.currentTimeMillis() - enterCreative);
-				dirty = true;
+				
 			}
 		} else if(creative){
 			timeInCreative += (System.currentTimeMillis() - enterCreative);
 			enterCreative = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 	}
 	
@@ -199,7 +256,7 @@ public class StaffRecord {
 				StaffTracker.Log.warning("setSocialSpyOffAt() time occurs BEFORE user entered Social Spy!");
 			
 			social = false;
-			dirty = true;
+			
 		}
 	}
 	
@@ -208,23 +265,23 @@ public class StaffRecord {
 			if(state){
 				social = true;
 				enterSocialSpy = System.currentTimeMillis();
-				dirty = true;
+				
 			} else {
 				//Player has left creative mode.
 				social = false;
 				timeInSocialSpy += (System.currentTimeMillis() - enterSocialSpy);
-				dirty = true;
+				
 			}
 		} else if(social){
 			timeInSocialSpy += (System.currentTimeMillis() - enterSocialSpy);
 			enterSocialSpy = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 	}
 
 	public boolean getSocialSpy(){return social;}
 	
-	public long getTimeOnline(){return this.timeIn;}
+	public long getTimeOnline(){return this.timeInGame;}
 	public long getTimeInVanish(){return this.timeInVanish;}
 	public long getTimeInCreative(){return this.timeInCreative;}
 	public long getTimeInSocialSpy(){return this.timeInSocialSpy;}
@@ -234,25 +291,25 @@ public class StaffRecord {
 		if(social){
 			timeInSocialSpy += (System.currentTimeMillis() - enterSocialSpy);
 			enterSocialSpy = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 		
 		if(creative){
 			timeInCreative += (System.currentTimeMillis() - enterCreative);
 			enterCreative = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 		
 		if(vanished){
 			timeInVanish += (System.currentTimeMillis() - enterVanish);
 			enterVanish = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 		
 		if(loggedIn){
-			timeIn += (System.currentTimeMillis() - loginTime);
+			timeInGame += (System.currentTimeMillis() - loginTime);
 			loginTime = System.currentTimeMillis();
-			dirty = true;
+			
 		}
 	}
 	
@@ -280,15 +337,14 @@ public class StaffRecord {
 				"§2Name : §9" + this.name +
 				"\n§2UUID : §9" + this.uuid.toString() +
 				"\n§2Logged In : " + (this.loggedIn ? "§aYes" : "§cNo") +
-				"\n§2Time Online Total : §9" + toHMSFormat(this.timeIn) +
-				"\n§2Is OP : §9" + (this.isOP ? "§aYes" : "No") +
+				"\n§2Time Online Total : §9" + toHMSFormat(this.timeInGame) + " (" + this.timeInGame + ")" +
+				"\n§2Is OP : §9" + (this.isOP ? "§aYes" : "§cNo") +
 				"\n§2In Vanished : §9" + (vanished ? "§aYes" : "§cNo") +
 				"\n§2Time In Vanish Total : §9" + toHMSFormat(this.timeInVanish) +
 				"\n§2In Creative : §9" + (creative ? "§aYes" : "§cNo") +
 				"\n§2Time In Creative Total : §9" + toHMSFormat(this.timeInCreative) +
 				"\n§2Socialspy On : §9" + (social ? "§aYes" : "§cNo") +
 				"\n§2Time In Socialspy Total : §9" + toHMSFormat(this.timeInSocialSpy) +
-				"\n§2Record Dirty : §9" + (dirty ? "§aYes" : "§cNo") +
 				"§r";
 				
 		return out;
