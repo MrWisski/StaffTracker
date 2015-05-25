@@ -36,7 +36,7 @@ import com.earth2me.essentials.Essentials;
 import com.earth2me.essentials.perm.PermissionsHandler;
 import com.google.common.io.Files;
 
-/** StaffTracker - A configurable Bukkit plugin to keep track of server Staff members.
+/** StaffTracker - A configurable Bukkit plugin to keep track of server Staff members, network wide.
  * 
  * 	Built with bukkit-1.6.4-R2.0
  * 
@@ -51,9 +51,8 @@ import com.google.common.io.Files;
  *  Will test on 1.7.10 & 1.6.4 as well, prior to moving to beta.
  *  
  *  Pending Feature list :
- *  	Move to SQL transactions BEFORE BETA.
+ *  	Move to SQL transactions? BEFORE BETA.
  *  	Test 1.7.10 & 1.6.4 BEFORE BETA.
- *  	Copy current StaffRecord.toString() into a "detailed staff report" job, for /st showstats BEFORE BETA.
  *  
  *  After Beta :
  *  	Non-SQL storage method for standalone, non-networked servers.
@@ -65,12 +64,15 @@ import com.google.common.io.Files;
  *  	Track AFK status.
  *  	Configure staff group DISPLAY names, (ie, perm is "mod", but displays as Moderator.
  *  	Configure staff display color settings (mod blue, admin red, op yellow, etc).
- *		Track /OI (open inventory) command usage.	
  *		
+ *		How about a configurable list of commands to track, to cover all this :
+ *		{
+ *			Track /OI (open inventory) command usage.	
+ *			Track item spawn ins from NEI cheat mode, /give, and creative?
+ *  		Track /kill?
+ *  	}
  *  
  *  May become pending features :
- *  	Track item spawn ins from NEI cheat mode, /give, and creative?
- *  	Track /kill?
  *  	WorldBorder bypass state?
  *  	
  *  
@@ -556,13 +558,14 @@ public final class StaffTracker extends JavaPlugin {
 		
 	/** Displays the help command for this plugin */
 	private void commandHelp(CommandSender sender, String label){
-		//TODO : Colorize!
+		//TODONE : Colorize!
 		sender.sendMessage("§2Staff§aTracker §2Help :");
 		sender.sendMessage("§a~~~~~~~~~~~~~~~~~~~");
 		sender.sendMessage("§2/" + label + " help §a- This screen!");
 		if(debug) sender.sendMessage("§c/" + label + " dumprec <playername> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
 		if(debug) sender.sendMessage("§c/" + label + " updateall - Forces internal staff recordset to be updated.");
 		sender.sendMessage("§2/" + label + " list §a- Shows all online staff members.");
+		sender.sendMessage("§2/" + label + " show <Playername> §a- Shows stats for a given staffmember.");
 	}
 	
 	/** Command to dump an internal StaffRecord - Only works if debug == true! */
@@ -595,7 +598,7 @@ public final class StaffTracker extends JavaPlugin {
 		}
 		
 	}
-	/** */
+	/** List current staffmembers online */
 	public void commandList(CommandSender sender){
 		if(debug) Log.info("DEBUG : commandList()");
 		if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.isStaff((Player)sender))){
@@ -637,6 +640,58 @@ public final class StaffTracker extends JavaPlugin {
 		}
 	}
 	
+	public void commandShow(CommandSender sender, String[] args){
+		if(debug) Log.info("DEBUG : commandShow("+args[1]+")");
+		
+		//Console or staff only!
+		if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.isStaff((Player)sender))){
+			
+			if(!sqldb.isConnected()){
+				if(!sqldb.connect()){
+					sender.sendMessage("§cSorry, couldn't establish a connection to the database. Please try again in a little while!");
+					return;
+				}				
+				
+			} 
+			
+			ResultSet rs = null;
+			PreparedStatement query = null;
+			try {
+				if(this.recordExists(args[1])) {
+					query = sqldb.getConnection().prepareStatement("SELECT * FROM " + pluginConf.getString("mysql.table") +
+									" WHERE NAME = ?");
+					
+					query.setString(1, args[1]);
+					rs = query.executeQuery();
+					if(rs.next()){
+						StaffRecord r = new StaffRecord(false, rs.getString("PUUID"), rs.getString("NAME"), rs.getString("SERVER"), rs.getBoolean("OP"), rs.getString("PGROUP"), rs.getBoolean("LOGGEDIN"),rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"));
+						r.setVanish(rs.getBoolean("VANISH"));
+						r.setCreative(rs.getBoolean("CREATIVE"));
+						r.setSocialSpy(rs.getBoolean("SOCIALSPY"));
+						String res = r.toStringNice();
+						sender.sendMessage(res);
+						rs.close();
+						query.close();
+					}  else {
+						if(debug) Log.info("DEBUG : commandShow(" + args[1] + ") - record for this player exists, recordset returned no results T_T");
+						sender.sendMessage("§cSorry, but for some reason, the record for that staff member couldn't be pulled from the database.");
+						rs.close();
+						query.close();				
+					}
+				} else {
+					sender.sendMessage("§cSorry, but no record for that staff member exists. Check your spelling, and try again!");
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+				sender.sendMessage("§cSorry, but an internal error has occured. Please check the console, or the server log, for more details.");
+			}
+			
+			
+		} else {
+			sender.sendMessage("§cSorry, currently, only staff members can use this command.");
+		}
+	}
+	
 	/** Notification from Bukkit server that a command has been entered.*/
 	@Override
 	public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
@@ -659,6 +714,9 @@ public final class StaffTracker extends JavaPlugin {
 						break;
 					case "list":
 						commandList(sender);
+						break;
+					case "show":
+						commandShow(sender, args);
 						break;
 					default:
 						commandHelp(sender, label);
@@ -723,7 +781,8 @@ public final class StaffTracker extends JavaPlugin {
 			rec.setSocialSpy(essentials.getUser(p).isSocialSpyEnabled());
 
 			staffInd.put(p.getName(), rec);
-
+			this.pushRecordToDB(rec);
+			
 		} else {
 
 			if(!isStaff(p)){
@@ -748,7 +807,7 @@ public final class StaffTracker extends JavaPlugin {
 				
 				//If there's an error, or we couldn't connect to the db (waaaat)
 				//the record will be null, and we'll catch it down the below.
-				//FIXME : catch it here, flag it, run a temporary copy, and then merge with the DB version once we can connect.
+				//FIXEDIT : catch it here, flag it, run a temporary copy, and then merge with the DB version once we can connect.
 				if(r != null){
 					if(debug) Log.info("DEBUG : loggedin : " + (r.getLoggedIn() ? "yes" : "no") + " server : " + r.getServer()); 
 					if(r.getLoggedIn() && r.getServer() != StaffTracker.MCServerName){
@@ -789,6 +848,7 @@ public final class StaffTracker extends JavaPlugin {
 						if(debug) Log.info("DEBUG : Retrieved staff member : " + r.getName() + "(" + r.getUUID().toString() + ") from database. *** IN GHOST MODE ***");
 					} else {
 						if(debug) Log.info("DEBUG : Retrieved staff member : " + r.getName() + "(" + r.getUUID().toString() + ") from database.");
+						this.pushRecordToDB(r);
 					}
 				}
 			}
@@ -822,7 +882,7 @@ public final class StaffTracker extends JavaPlugin {
 				//we can now send this off to UpdateRecord to fill in all the rest.
 				
 				this.updateRecord(p, r);
-
+				this.pushRecordToDB(r);
 				if(debug) Log.info("DEBUG : Added staff member : " + r.getName() + "(" + r.getUUID().toString() + ")");
 			}
 		}
@@ -959,7 +1019,8 @@ public final class StaffTracker extends JavaPlugin {
 		//Make sure we're connected to the DB.
 		if(!sqldb.connected){
 			if(!sqldb.connect()){
-				//FIXME : If this returns null because we can't connect to the DB, and we use this returning null to signify that there's no record in the DB, we have an issue - Need to make this NOT AN ISSUE. :(
+				//FIXEDIT : If this returns null because we can't connect to the DB, and we use this returning null to signify that there's no record in the DB, we have an issue - Need to make this NOT AN ISSUE. :(
+				//now checks recordsChecked at the call, and makes three attempts to checkrecords before failing.
 				recordsChecked = false;
 				if(debug) Log.info("DEBUG : Couldn't connect to DB. This is kind of critical that we check this - If we can't connect, Plugin will be disabled :(");
 				return;

@@ -63,8 +63,7 @@ public class StaffRecord {
 	}
 	
 	/** This constructor is used from data pulled from the DB. */
-	StaffRecord(boolean isGhost, String id, String name, String server, boolean isOp, String group, boolean isOnline,long timeon, long timevanish, long timecreative, long timesocial){
-		StaffTracker.Log.info("StaffRecord : passed timeon is : " + timeon);
+	StaffRecord(boolean isGhost, String id, String name, String server, boolean isOp, String group, boolean isOnline, long timeon, long timevanish, long timecreative, long timesocial){
 		this.ghost = isGhost;
 		this.uuid = UUID.fromString(id);
 		this.name = name;
@@ -346,6 +345,45 @@ public class StaffRecord {
 				"\n§2Socialspy On : §9" + (social ? "§aYes" : "§cNo") +
 				"\n§2Time In Socialspy Total : §9" + toHMSFormat(this.timeInSocialSpy) +
 				"§r";
+				
+		return out;
+				
+	}
+	
+	public String toStringNice(){
+		String out = "";
+		
+		out =	"§2Name : §9" + this.name +
+				"\n§2Staff Group : §9" + this.group +
+				"\n§2Is Online : §9" + (this.loggedIn ? "§aYes" : "§cNo") +
+				"\n§2Is OP : §9" + (this.isOP ? "§aYes" : "§cNo") +
+				"\n§2In Vanished : §9" + (vanished ? "§aYes" : "§cNo") +
+				"\n§2In Creative : §9" + (creative ? "§aYes" : "§cNo") +
+				"\n§2Socialspy On : §9" + (social ? "§aYes" : "§cNo") +
+				"\n§2Time Online Total : §9" + toHMSFormat(this.timeInGame);
+				
+		if(this.timeInVanish < this.timeInGame){
+			float perc = ((float)this.timeInVanish / (float)this.timeInGame) * 100.0f;
+			out += "\n§2Time In Vanish Total : §9" + toHMSFormat(this.timeInVanish) + " (" + String.format("%.0f", perc) + "%)"; 
+		} else {
+			out += "\n§2Time In Vanish Total : §9" + toHMSFormat(this.timeInVanish);
+		}
+		
+		if(this.timeInCreative < this.timeInGame){
+			float perc = ((float)this.timeInCreative / (float)this.timeInGame) * 100.0f;
+			out += "\n§2Time In Creative Total : §9" + toHMSFormat(this.timeInCreative) + " (" + String.format("%.0f", perc) + "%)"; 
+		} else {
+			out += "\n§2Time In Creative Total : §9" + toHMSFormat(this.timeInCreative);
+		}
+		
+		if(this.timeInSocialSpy < this.timeInGame){
+			float perc = ((float)this.timeInSocialSpy / (float)this.timeInGame) * 100.0f;
+			out += "\n§2Time In SocialSpy Total : §9" + toHMSFormat(this.timeInSocialSpy) + " (" + String.format("%.0f", perc) + "%)"; 
+		} else {
+			out += "\n§2Time In SocialSpy Total : §9" + toHMSFormat(this.timeInSocialSpy);
+		}
+		
+		out += "§r";
 				
 		return out;
 				
