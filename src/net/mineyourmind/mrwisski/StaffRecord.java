@@ -8,7 +8,7 @@ import org.apache.commons.lang.time.DurationFormatUtils;
 
 /** Class containing all the data about a particular staff member we track! */
 public class StaffRecord {
-	private boolean debug = true;
+	private boolean debug = false;
 	
 	private String name = "Unknown Player";
 	private UUID uuid;

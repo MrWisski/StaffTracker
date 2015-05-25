@@ -51,8 +51,7 @@ import com.google.common.io.Files;
  *  Will test on 1.7.10 & 1.6.4 as well, prior to moving to beta.
  *  
  *  Pending Feature list :
- *  	Move to SQL transactions? BEFORE BETA.
- *  	Test 1.7.10 & 1.6.4 BEFORE BETA.
+ *  	Test 1.6.4 BEFORE BETA.
  *  
  *  After Beta :
  *  	Non-SQL storage method for standalone, non-networked servers.
@@ -93,7 +92,7 @@ public final class StaffTracker extends JavaPlugin {
 	
 	//Are we printing debugging/troubleshooting messages to the log?
 	//This is set from the config, but influences messages BEFORE the config is read.
-	boolean debug = true;
+	boolean debug = false;
 	
 	//If we're using essentials
 	Plugin essentialsPlugin;
@@ -383,7 +382,7 @@ public final class StaffTracker extends JavaPlugin {
 		//Stash the server!
 		server = getServer();
 		String p = new File(".").getAbsoluteFile().getParentFile().getName();
-		Log.info("P = " + p);
+		if(debug) Log.info("DEBUG : fallback server name = " + p);
 		
 		if(server.getServerName().equals("Unknown Server")){
 			if(debug) this.getLogger().info("DEBUG : Server operator forgot to set a name in server.properties - using server directory name");
@@ -544,15 +543,21 @@ public final class StaffTracker extends JavaPlugin {
 	@Override
 	public void onDisable() {
 		if(debug) this.getLogger().info("DEBUG : onDisable()");
+		//Make sure we stop our task.
+		if(this.updateTimer != null)
+			this.updateTimer.cancel();
 		//Clean up database related stuff, if we're using it.
 		if(this.useSQL)
 			if(this.sqldb != null){
-				
+				//Update all the records, and save them to DB.
+				this.updateAllRecords();
+				//close out all our DB stuff.
 				this.sqldb.close();
-				//TODO : Save out all StaffRecords
 			}
 		
+		//Just to be nice.
 		this.enabled = false;
+		//Just so ya know...
 		getLogger().info("StaffTracker disabled successfully!");
 	}
 		
@@ -562,6 +567,7 @@ public final class StaffTracker extends JavaPlugin {
 		sender.sendMessage("§2Staff§aTracker §2Help :");
 		sender.sendMessage("§a~~~~~~~~~~~~~~~~~~~");
 		sender.sendMessage("§2/" + label + " help §a- This screen!");
+		sender.sendMessage("§2/" + label + " reload §a- Re-loads the configs from disk - some settings still require a restart!");
 		if(debug) sender.sendMessage("§c/" + label + " dumprec <playername> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
 		if(debug) sender.sendMessage("§c/" + label + " updateall - Forces internal staff recordset to be updated.");
 		sender.sendMessage("§2/" + label + " list §a- Shows all online staff members.");
@@ -718,6 +724,9 @@ public final class StaffTracker extends JavaPlugin {
 					case "show":
 						commandShow(sender, args);
 						break;
+					case "reload":
+						this.myConfFile.loadConfig();
+						pluginConf = myConfFile.getConfig();
 					default:
 						commandHelp(sender, label);
 						break;
@@ -928,9 +937,35 @@ public final class StaffTracker extends JavaPlugin {
 	 */
 	public void updateAllRecords(){
 		if(debug) this.getLogger().info("DEBUG : updateAllRecords()");
+		
+		if(staffInd.isEmpty()){
+			if(debug) Log.info("Staff Index is empty! No work to do.");
+			return;
+		}
+		
+		//List of staffnames that need to be removed from staffInd
 		List<String> removelist = new ArrayList<String>();		
+		boolean transact = false;
+		
+		//Make sure we're connected to the DB.
+		if(!sqldb.connected){
+			if(!sqldb.connect()){
+				return;
+			}
+		}
+		
+		try {
+			sqldb.getConnection().setAutoCommit(false);
+			if(debug) Log.info("DEBUG : Starting transaction for update.");
+			transact = true;
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			transact = false;
+		}
 		
 		Enumeration<StaffRecord> staffe = staffInd.elements();
+		
 		while(staffe.hasMoreElements()){
 			StaffRecord r = staffe.nextElement();
 			//Standard expected record - logged in, and not ghosted
@@ -973,7 +1008,7 @@ public final class StaffTracker extends JavaPlugin {
 					} else {
 						// Somewhere, somehow, we ghosted this record when we shouldn't have.
 						// If our logic is bulletproof, then we'll never get here.
-						// However, this is a fail of the highest order, if we get here.
+						// However, this is a fail of the highest order if we ever see this message.
 						Log.severe("********************************************************");
 						Log.severe("Fail detected : We ghosted a record we can never unghost!");
 						Log.severe("Affected player : " + r.getName());
@@ -992,16 +1027,35 @@ public final class StaffTracker extends JavaPlugin {
 				} else {
 					//Failed again. Thank goodness we're persistant! :D
 					r.setCommitting(false);
+					staffInd.put(r.getName(), r);
 				}
 			}
 		}
-		//Clean up the staff index if we had to commit!
-		if(!removelist.isEmpty()){
-			for(String n : removelist){
-				staffInd.remove(n);
-			}
-		}
 		
+		//We're done with this transaction so..
+		if(transact){
+			try {
+				if(debug) Log.info("DEBUG : Attempting to commit");
+				sqldb.getConnection().commit();
+				sqldb.getConnection().setAutoCommit(true);
+				//Clean up the staff index if we had to weed out any old records!
+				if(!removelist.isEmpty()){
+					for(String n : removelist){
+						staffInd.remove(n);
+					}
+				}
+				if(debug) Log.info("DEBUG : Transaction complete!");
+			} catch (SQLException e) {
+				Log.severe("Exception thrown during .commit() - rolling back, and will try again later!");
+				e.printStackTrace();
+				try {
+					sqldb.getConnection().rollback();
+				} catch (SQLException e1) {
+					Log.severe("Exception thrown attempting to rollback. :(");
+					e1.printStackTrace();
+				}
+			}
+		}		
 	}
 
 	///////////////////////////////////////////////////////////////////////////////////
@@ -1115,12 +1169,9 @@ public final class StaffTracker extends JavaPlugin {
 		return null;
 	}
 
-	//TODO : push Records that need updates to a pool, commit all the records at once
-	// This works, but its likely naive as hell...but IT WORKS. ;)
+	/** Pushes StaffRecord r to the database. */
 	public boolean pushRecordToDB(StaffRecord r){
 		//Let the rest of everything know - WE ARE COMMITTING TO DB!
-		r.setCommitting(true);
-		staffInd.put(r.getName(), r);
 		if(debug) Log.info("DEBUG : pushRecordtoDB()");
 
 		PreparedStatement update = null;
@@ -1287,6 +1338,7 @@ public final class StaffTracker extends JavaPlugin {
 
 		if(debug) this.getLogger().info("DEBUG : isVanish = " + (isVanished ? "True" : "False"));
 
+		r.setOp(p.isOp());
 
 		//update record if need be for creative.
 		r.setCreative(p.getGameMode() == GameMode.CREATIVE);
@@ -1296,13 +1348,13 @@ public final class StaffTracker extends JavaPlugin {
 
 		//update record if need be for socialspy
 		r.setSocialSpy(essentials.getUser(p).isSocialSpyEnabled());
-
+		
 		r.setLoggedIn(true);
 
 		//finally, update the record. otherwise, what's the point, right?
 		staffInd.put(p.getName(), r);
 		
-		StaffTracker.Log.info("after put : time in = " + r.getTimeOnline());
+		if(debug) StaffTracker.Log.info("DEBUG : after put : time in = " + r.getTimeOnline());
 	}
 
 	/** Getter for the class instance

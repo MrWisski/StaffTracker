@@ -1,12 +1,20 @@
 name: StaffTracker
 main: net.mineyourmind.mrwisski.StaffTracker
-version: 0.1b
+version: 0.0.9a
 author: MrWisski
 softdepend: [Essentials, VanishNoPacket,zPermissions]
+description: Bukkit plugin to help monitor staff activity
+website: https://github.com/MrWisski/StaffTracker
+
 
 commands:
    st:
       description: StaffTracker help
-      usage: /st
+      usage: /st help
+      default: op
+      permission: st.use
       
 permissions:
+   st.use:
+      description: make use of the /st command
+      default: op

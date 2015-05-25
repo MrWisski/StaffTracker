@@ -8,7 +8,7 @@ plugin:
   useessentials: true
   usezperms: true
 #Debug mode, can get a wee bit spammy.
-  debug: true
+  debug: false
 
 stafftracker:
 #how often do we update, in seconds.
