@@ -47,16 +47,11 @@ import com.google.common.io.Files;
  *  	VanishNoPacket (Vanish provider)
  *  	Vault (1.4.2) (Primary group permissions support, if configured for groups)  
  *  
- *  Tested extensively on 1.8.4 Spigot during Alpha.
- *  Will test on 1.7.10 & 1.6.4 as well, prior to moving to beta.
+ *  Tested extensively on Spigot 1.8.4, 1.7.10, and 1.6.4, as well as Cauldron 1.7.10 and 1.6.4 during Alpha.
  *  
  *  Pending Feature list :
- *  	Test 1.6.4 BEFORE BETA.
+ *  	**Get all DB interactions handled in an asynch thread to avoid tying up the main server thread
  *  
- *  After Beta :
- *  	Non-SQL storage method for standalone, non-networked servers.
- *  	Small class to handle tying together all the various permissions providers we could
- *  		encounter in the "wild" - this is more to neaten up the code than anything else
  *  	"Request" specific staff member to a server - /st need <member name>
  *  	"Request" specific staff group to a server - /st need <group name>
  *  	"Request" anyone at all to a server - /st need
@@ -168,6 +163,7 @@ public final class StaffTracker extends JavaPlugin {
 					"TIMEVANISH int NOT NULL,"+
 					"TIMECREATIVE int NOT NULL,"+
 					"TIMESOCIALSPY int NOT NULL,"+
+					"COMMANDCSV text" +
 					"PRIMARY KEY (NAME));");
 			return true;
 		}
@@ -935,7 +931,11 @@ public final class StaffTracker extends JavaPlugin {
 	 *  called from our scheduled task. 
 	 *  
 	 */
+	
 	public void updateAllRecords(){
+		
+		
+		
 		if(debug) this.getLogger().info("DEBUG : updateAllRecords()");
 		
 		if(staffInd.isEmpty()){
@@ -1171,92 +1171,19 @@ public final class StaffTracker extends JavaPlugin {
 
 	/** Pushes StaffRecord r to the database. */
 	public boolean pushRecordToDB(StaffRecord r){
-		//Let the rest of everything know - WE ARE COMMITTING TO DB!
 		if(debug) Log.info("DEBUG : pushRecordtoDB()");
-
-		PreparedStatement update = null;
-
 		//Make sure we're connected to the DB.
 		if(!sqldb.connected){
 			if(!sqldb.connect()){
+				Log.info("pushRecordToDB : Couldn't connect to DB");
 				return false;
 			}
 		}
 
-		try{
-
-			if(this.recordExists(r.getName())) {
-				update = sqldb.getConnection().prepareStatement("UPDATE " + pluginConf.getString("mysql.table") +
-								" set SERVER = ?, " + 
-								" OP = ?," +
-								" LOGGEDIN = ?," +
-								" VANISH = ?," +
-								" CREATIVE = ?, " +
-								" SOCIALSPY = ?, " +
-								" TIMELOGGED = ?, " +
-								" TIMEVANISH = ?, " +
-								" TIMECREATIVE = ?, " +
-								" TIMESOCIALSPY = ?, " +
-								" PGROUP = ? " + 
-								"where NAME = ?");
-				update.setString(1, r.getServer());
-				update.setBoolean(2, r.getOp());
-				update.setBoolean(3, r.getLoggedIn());
-				update.setBoolean(4, r.getVanish());
-				update.setBoolean(5, r.getCreative());
-				update.setBoolean(6, r.getSocialSpy());
-				update.setLong(7,r.getTimeOnline());
-				update.setLong(8, r.getTimeInVanish());
-				update.setLong(9, r.getTimeInCreative());
-				update.setLong(10, r.getTimeInSocialSpy());
-				update.setString(11, r.getGroup());
-				update.setString(12, r.getName());
-				update.executeUpdate();
-	
-			} else{
-				update = sqldb.getConnection().prepareStatement(
-						"INSERT INTO " + pluginConf.getString("mysql.table") + "("+
-								"PUUID, " +
-								"NAME, "+
-								"SERVER, "+
-								"PGROUP, "+
-								"OP, "+
-								"LOGGEDIN, "+
-								"VANISH, "+
-								"CREATIVE, "+
-								"SOCIALSPY, "+
-								"TIMELOGGED, "+
-								"TIMEVANISH, "+
-								"TIMECREATIVE, "+
-								"TIMESOCIALSPY) "+
-						"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-				update.setString(1, r.getUUID().toString());
-				update.setString(2, r.getName());
-				update.setString(3, r.getServer());
-				update.setString(4, r.getGroup());
-				update.setBoolean(5, r.getOp());
-				update.setBoolean(6, r.getLoggedIn());
-				update.setBoolean(7, r.getVanish());
-				update.setBoolean(8, r.getCreative());
-				update.setBoolean(9, r.getSocialSpy());
-				update.setLong(10, r.getTimeOnline());
-				update.setLong(11, r.getTimeInVanish());
-				update.setLong(12, r.getTimeInCreative());
-				update.setLong(13, r.getTimeInSocialSpy());
-				update.executeUpdate();
-	
-			}
-		} catch (SQLException e) {
-			e.printStackTrace();
-			return false;
-		} finally {
-			try{
-				update.close();
-			} catch (SQLException e) {
-				
-			}
-		}
-
+		Runnable pushto = new ASynchPush(sqldb, r, pluginConf.getString("mysql.table"), this.debug, Log);
+		
+		Bukkit.getScheduler().runTaskAsynchronously(this, pushto);
+		Log.info("Asynch Push started!");
 		return true;
 	}
 
