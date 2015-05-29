@@ -112,17 +112,17 @@ public class ASynchPush implements Runnable {
 			}
 		} catch (SQLException e) {
 			e.printStackTrace();
-			Log.severe("Failed AsynchPush to DB T_T");
+			//Log.severe("Failed AsynchPush to DB T_T");
 		} finally {
 			try{
 				update.close();
 			} catch (SQLException e) {
-				Log.severe("Failed ASynchPush closing the update T_T");
+				//Log.severe("Failed ASynchPush closing the update T_T");
 				
 			}
 		}
 
-		Log.info("Asynch Push completed without error.");
+		//Log.info("Asynch Push completed without error.");
 	}
 
 }
