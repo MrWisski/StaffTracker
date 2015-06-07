@@ -89,6 +89,9 @@ public final class StaffTracker extends JavaPlugin {
 	//This is set from the config, but influences messages BEFORE the config is read.
 	boolean debug = false;
 	
+	private List<StaffRecord> dbPushes = new ArrayList<StaffRecord>();
+	private List<AsynchPush> pendingAsynchs = new ArrayList<AsynchPush>();
+	
 	//If we're using essentials
 	Plugin essentialsPlugin;
 	Essentials essentials;
@@ -96,6 +99,8 @@ public final class StaffTracker extends JavaPlugin {
 	Plugin vanishPlugin;
 	VanishPlugin vanish;
 	VanishManager vanishMan;
+	
+	public static boolean dbPushActive = false;
 
 	// TODO : Decide if we REALLY need vault, I think we can squeeze by with just
 	// Essentials. The options ARE nice though.
@@ -131,10 +136,10 @@ public final class StaffTracker extends JavaPlugin {
 	private SQLDB sqldb = null;
 	
 	//Storage array for keeping track of staff members
-	Hashtable<String,StaffRecord> staffInd;
+	public Hashtable<String,StaffRecord> staffInd;
 	
 	//Cache for Staff groups, read in from config
-	List<String> staffGroups;
+	private List<String> staffGroups;
 	//TODO : same thing, but with various perms, for the stafftracker.staffPerms list
 	
 	/** Just a small function to ensure the tables exist, before we go pushing data to them.
@@ -163,8 +168,10 @@ public final class StaffTracker extends JavaPlugin {
 					"TIMEVANISH int NOT NULL,"+
 					"TIMECREATIVE int NOT NULL,"+
 					"TIMESOCIALSPY int NOT NULL,"+
-					"COMMANDCSV text" +
+					"COMMANDCSV text NULL, " +
 					"PRIMARY KEY (NAME));");
+			
+//			CREATE TABLE IF NOT EXISTS stafftracker (PUUID varchar(36) NOT NULL, NAME varchar(16) NOT NULL, SERVER varchar(32) NOT NULL, PGROUP varchar(32) NOT NULL, OP boolean NOT NULL, LOGGEDIN boolean NOT NULL, VANISH boolean NOT NULL, CREATIVE boolean NOT NULL, SOCIALSPY boolean NOT NULL, TIMELOGGED int NOT NULL, TIMEVANISH int NOT NULL, TIMECREATIVE int NOT NULL, TIMESOCIALSPY int NOT NULL, COMMANDCSV text, PRIMARY KEY (NAME));
 			return true;
 		}
 		
@@ -933,20 +940,14 @@ public final class StaffTracker extends JavaPlugin {
 	 */
 	
 	public void updateAllRecords(){
-		
-		
-		
+				
 		if(debug) this.getLogger().info("DEBUG : updateAllRecords()");
 		
-		if(staffInd.isEmpty()){
-			if(debug) Log.info("Staff Index is empty! No work to do.");
+		if(staffInd.isEmpty() && this.dbPushes.isEmpty()){
+			if(debug) Log.info("Staff Index is empty, and no record pushes! No work to do.");
 			return;
 		}
-		
-		//List of staffnames that need to be removed from staffInd
-		List<String> removelist = new ArrayList<String>();		
-		boolean transact = false;
-		
+
 		//Make sure we're connected to the DB.
 		if(!sqldb.connected){
 			if(!sqldb.connect()){
@@ -954,15 +955,7 @@ public final class StaffTracker extends JavaPlugin {
 			}
 		}
 		
-		try {
-			sqldb.getConnection().setAutoCommit(false);
-			if(debug) Log.info("DEBUG : Starting transaction for update.");
-			transact = true;
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-			transact = false;
-		}
+		List<String> removelist = new ArrayList<String>();	
 		
 		Enumeration<StaffRecord> staffe = staffInd.elements();
 		
@@ -971,11 +964,7 @@ public final class StaffTracker extends JavaPlugin {
 			//Standard expected record - logged in, and not ghosted
 			if(r.getLoggedIn() && !r.getGhost()){
 				this.updateRecord(server.getPlayer(r.getName()), r);
-				r.setCommitting(true);
-				staffInd.put(r.getName(), r);
 				this.pushRecordToDB(r);
-				r.setCommitting(false);
-				staffInd.put(r.getName(), r);
 			//Logged in, and ghosted.
 			} else if(r.getLoggedIn() && r.getGhost()){
 				//we need to merge the DB records with this one, so lets try to merge them!
@@ -1032,31 +1021,54 @@ public final class StaffTracker extends JavaPlugin {
 			}
 		}
 		
-		//We're done with this transaction so..
-		if(transact){
-			try {
-				if(debug) Log.info("DEBUG : Attempting to commit");
-				sqldb.getConnection().commit();
-				sqldb.getConnection().setAutoCommit(true);
-				//Clean up the staff index if we had to weed out any old records!
-				if(!removelist.isEmpty()){
-					for(String n : removelist){
+		//We need to clean up from previous runs.
+		List<AsynchPush> pushremlist = new ArrayList<AsynchPush>();
+		
+		for(AsynchPush p : pendingAsynchs){
+			//if we've already got a push going, we can cause issues spawning out 2 threads to try and
+			//access the DB at the same time, so detect that, and abort if need be.
+			if(StaffTracker.dbPushActive == true){
+				if(this.debug) Log.info("DEBUG : Already pushing! aborting!");
+				break;
+			}
+			if(p.failure == false && p.state == true){
+				//This push succeeded!
+				if(!p.removelist.isEmpty()){
+					//If we have any players that need to be removed...
+					for(String n : p.removelist){
 						staffInd.remove(n);
+						if(this.debug) Log.info("Removed staff member " + n + "from staff index!");
 					}
 				}
-				if(debug) Log.info("DEBUG : Transaction complete!");
-			} catch (SQLException e) {
-				Log.severe("Exception thrown during .commit() - rolling back, and will try again later!");
-				e.printStackTrace();
-				try {
-					sqldb.getConnection().rollback();
-				} catch (SQLException e1) {
-					Log.severe("Exception thrown attempting to rollback. :(");
-					e1.printStackTrace();
-				}
+				//Lets avoid concurrent modification exceptions, shall we?
+				pushremlist.add(p);
+			} else if(p.failure = true && StaffTracker.dbPushActive == false) {
+				//this push failed - try again!
+				p.failure = false;
+				p.state = false;
+				Bukkit.getScheduler().runTaskAsynchronously(this, p);
+				if(debug) Log.info("DEBUG : Spawned another asynch thread to push (failed) data to DB!");
+				//since we've just spawned a new thread, break here so we don't spawn another!
+				break;
 			}
-		}		
-	}
+		}
+		
+		//clear out any successfull pushes here.
+		for(AsynchPush p : pushremlist){
+			pendingAsynchs.remove(p);
+		}
+		
+		//and finally, push our new thread
+		AsynchPush newpush = new AsynchPush(sqldb, this.getServer().getScheduler(),dbPushes, pluginConf.getString("mysql.table"), removelist);
+		this.pendingAsynchs.add(newpush);
+		if(!StaffTracker.dbPushActive){
+			Bukkit.getScheduler().runTaskAsynchronously(this, newpush);
+			if(debug) Log.info("DEBUG : Spawned asynch thread to push data to DB!");
+		}
+		//clear out our dbPushes, since we've already got these pushes scheduled
+		dbPushes.clear();
+	}		
+	
 
 	///////////////////////////////////////////////////////////////////////////////////
 	// HELPER FUNCTIONS
@@ -1172,18 +1184,23 @@ public final class StaffTracker extends JavaPlugin {
 	/** Pushes StaffRecord r to the database. */
 	public boolean pushRecordToDB(StaffRecord r){
 		if(debug) Log.info("DEBUG : pushRecordtoDB()");
-		//Make sure we're connected to the DB.
-		if(!sqldb.connected){
-			if(!sqldb.connect()){
-				Log.info("pushRecordToDB : Couldn't connect to DB");
-				return false;
+		StaffRecord replace = null;
+		
+		for(StaffRecord c : dbPushes){
+			if(c.getName().matches(r.getName())){
+				replace = c;
 			}
 		}
-
-		Runnable pushto = new ASynchPush(sqldb, r, pluginConf.getString("mysql.table"), this.debug, Log);
 		
-		Bukkit.getScheduler().runTaskAsynchronously(this, pushto);
-		Log.info("Asynch Push started!");
+		if(replace != null){
+			if(debug) Log.info("Replacing record for " + r.getName());
+			dbPushes.remove(replace);
+			this.dbPushes.add(r);
+		} else {
+			if(debug) Log.info("Added " + r.getName() + " to the record push list");
+			this.dbPushes.add(r);
+		}
+		
 		return true;
 	}
 
