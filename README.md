@@ -6,7 +6,7 @@ This project is currently in ALPHA testing, but will be moving to BETA soon!
   	Built with bukkit-1.6.4-R2.0
 	Hard Plugin Dependencies : None! ^_^
     Soft Plugin Dependencies :
-    	Essentials (2.14)(Vanish provider, backup group permissions support, if configured for groups)
+    	Essentials (2.14)(Vanish provider, fallback group permissions support, if configured for groups)
     	VanishNoPacket (Vanish provider)
     	Vault (1.4.2) (Primary group permissions support, if configured for groups)   
     	
@@ -25,35 +25,116 @@ This project is currently in ALPHA testing, but will be moving to BETA soon!
 		1. VanishNoPacket Vanish or Essentials Vanish
 		2. Creative Game Mode
 		3. Essentials SocialSpy	
+	
+	Configurable command tracking :
+		Allows you to create a list of commands, the usage of which is tracked depending
+		on the state that you assign for tracking.
 		
-	Reads/writes from a configured mySQL database. synch reads/asynch writes to prevent
-	clogging up the main server thread.
+		Added under the tracks: configuration section, the format is <command>:<state>,
+		with state being :
+			1. 'other' - tracks when the first argument is something other than the staff 				members name.
+			2. 'self' - tracks when the first argument is the staff members name.
+			3. 'all' - tracks regardless of arguments.
+			
+		Please note that this function is ONLY intercepting commands prior to being
+		passed to their respective plugins for handling! It DOES NOT check for command
+		success, nor does it care about valid arguments or anything. If you do not even
+		have the OpenInventory plugin, but have /oi in the tracking list, if ANY player
+		types /oi, the OI command track will be incremented! If you type /kill a, the kill
+		command track will be incremented - unless YOUR in game name is 'a' ;)
+		
+		The player name is expected to be the first argument, directly after
+		the space following the command. if the player name is an argument AFTER the first
+		then you must use 'all' to get anything like expected results.
+		
+		Example configuration :
+			tracks:
+				kill: 'other' 	#tracks when a staff members kills someone, but not suicides
+				oi: 'all'			#tracks all uses of /oi
+				god: 'all'		#tracks all uses of /god
+				op: 'other'		#tracks all uses of /op when used on other people.
+			
+	
+	Stores data in a configured mySQL database. synch reads/asynch writes to prevent
+	clogging up the main server thread. Use a single, global SQL server to allow your
+	servers to share this data between them!
 	
 	
 #Pending Feature list :
 	Configuration additions :
 		1. Allow configuration of server name in config.
-		2. Non-SQL storage method for standalone, non-networked servers.
-		3. 	Configure staff group DISPLAY names, (perm is "mod", display as "Moderator"
-		4. Configure staff display color settings (mod blue, admin red, op yellow, etc).
-		5. Allow single permission list, same as permission groups.
+		2. Allow single permission list, same as permission groups.
 	
-	Configurable command tracking :
-		Command line : "oi", "kill", "op"
-		TrackState : "All", "Self-Only", "Other-Only", "Self-Ignore", "Other-Ignore"
-		Will keep track of how many times the command was used in applicable track states.
-
-	"Request" specific staff member to a server - /st need <member name>
-	"Request" specific staff group to a server - /st need <group name>
-	"Request" anyone at all to a server - /st need
+	Send the list of tracked commands to the StaffRecord class, so it can purge commands
+	that we're no longer tracking and keep the DB clean.
 	
+	"Remove" command to remove a staff member from the DB.
+	
+	Various permissions, so that a base-level staff member can't pull up detailed 
+	records for anyone/everyone, for instance.
+		stafftracker.ViewDetails, stafftracker.RemoveRecord
+	
+	Staff Group Config to replace the current config section :
+		
+		#groups default and op are required.
+		groups:
+			#grouping for regular, non-staff players.
+			default:
+				#determines who can see who in /vanish using /st list
+				priority: 0
+				displayname: 'Player'
+				displaycolor: '1'
+				permgroup: ''
+				perm: ''
+				isop: false
+			#default group for ops - only used when the player has op, but otherwise
+			#doesn't fit into another group.
+			op:
+				priority: 0
+				displayname: 'Non-Staff Op'
+				displaycolor: '2'
+				permgroup: ''
+				perm: ''
+				isop: true
+			#Custom groups start here!
+			mod:
+				priority: 1
+				displayname: 'Moderator'
+				displaycolor: 'a'
+				permgroup: 'moderator'
+				perm: ''
+				isop: false
+			admin:
+				priority: 2
+				displayname: 'Admin'
+				displaycolor: 'b'
+				permgroup: 'admin'
+				perm: ''
+				isop: true
+				
 	Track AFK state/duration.
+	
+	Track God/Fly state/duration.
+	
+	Track states/durations per day, week, and month.
 
     
 	May become pending features :
+		Non-SQL storage method for standalone servers?
     	WorldBorder bypass state?
-    	Give players access to a staff list command, that will show all non-vanished
-    	staff?
+    	
+    	Give players access to /st list command, that will show all non-vanished staff?
+    	
+    	Staff Request :
+			Allows someone to put in a request for a staff member to come help.
+		
+			"Request" specific staff member to a server - /st need <member name> <reason>
+			"Request" specific staff group to a server - /st need <group name> <reason>
+			"Request" anyone at all to a server - /st neednow <reason>	
+			Staff can answer a request with /st answer <request #>
+    	
+    	Give players access to /st need? Though, really, isn't that what we have ticket
+    	systems for? ^_^
     	
     	
 

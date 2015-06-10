@@ -1,5 +1,6 @@
 package net.mineyourmind.mrwisski;
 
+import java.util.HashMap;
 import java.util.UUID;
 
 import org.apache.commons.lang.time.DurationFormatUtils;
@@ -8,6 +9,8 @@ import org.apache.commons.lang.time.DurationFormatUtils;
 
 /** Class containing all the data about a particular staff member we track! */
 public class StaffRecord {
+	public enum ghostReason {NA, ANOTHERSERVER, CHECKRECORDS};
+	
 	private boolean debug = false;
 	
 	private String name = "Unknown Player";
@@ -25,6 +28,8 @@ public class StaffRecord {
 	private long timeInCreative = 0;
 	private long timeInSocialSpy = 0;
 	private long timeInGame = 0;
+	
+	private HashMap<String,Integer> commands = new HashMap<String,Integer>();
 
 	// Is this record empty? used as a status return, as a null record is an error condition.
 	private boolean empty = false;
@@ -40,6 +45,8 @@ public class StaffRecord {
 	//Use ghost mode when we have a DB connection failure when we're trying to retrieve records
 	//or when the data in the DB indicates we already have a connection elsewhere.
 	private boolean ghost = false;
+	@SuppressWarnings("unused")
+	private ghostReason reason = ghostReason.NA;
 	
 	private long enterVanish = 0;
 	private long enterCreative = 0;
@@ -50,8 +57,9 @@ public class StaffRecord {
 		empty = true;
 	}
 	
-	StaffRecord(boolean isGhost, UUID id, String name, String server, String group, boolean vanished, boolean creativemode, boolean socialspy){
+	StaffRecord(boolean isGhost, ghostReason reason, UUID id, String name, String server, String group, boolean vanished, boolean creativemode, boolean socialspy){
 		this.ghost = isGhost;
+		this.reason = reason;
 		this.uuid = id;
 		this.name = name;
 		setGroup(group);
@@ -63,8 +71,9 @@ public class StaffRecord {
 	}
 	
 	/** This constructor is used from data pulled from the DB. */
-	StaffRecord(boolean isGhost, String id, String name, String server, boolean isOp, String group, boolean isOnline, long timeon, long timevanish, long timecreative, long timesocial){
+	StaffRecord(boolean isGhost, ghostReason reason, String id, String name, String server, boolean isOp, String group, boolean isOnline, long timeon, long timevanish, long timecreative, long timesocial, String commandcsv){
 		this.ghost = isGhost;
+		this.reason = reason;
 		this.uuid = UUID.fromString(id);
 		this.name = name;
 		this.server = server;
@@ -86,16 +95,29 @@ public class StaffRecord {
 			
 		}
 		
+		// now to parse the tracked commands list!
+		if(commandcsv != null && commandcsv.length() > 0){
+			String com[] = commandcsv.split(",");
+			for(String s : com){
+				String v[] = s.split(":");
+				if(v[0] != s && v[0] != null && v[1] != null){
+					this.commands.put(v[0], Integer.valueOf(v[1]));
+					StaffTracker.Log.info("commands.put(" + v[0] + "," + v[1] + ")");
+				}
+			}
+		}
+		
 	}
 	
 	public boolean unGhost(String name, long timeon, long timevanish, long timecreative, long timesocial){
-		StaffTracker.Log.info("unGhost : passed timeon is : " + timeon);
+		
 		if(this.name.equals(name) && this.ghost){
 			this.timeInGame += timeon;
 			this.timeInVanish += timevanish;
 			this.timeInCreative += timecreative;
 			this.timeInSocialSpy += timesocial;
 			this.ghost = false;
+			this.reason = ghostReason.NA;
 			return true;
 		} else {
 			StaffTracker.Log.warning("this.name = [" + this.name + "] passed in name = [" + name + "]");
@@ -113,8 +135,29 @@ public class StaffRecord {
 	
 	public boolean isEmpty(){return this.empty;}
 	
+	public void incCommand(String command){
+		if(this.commands.containsKey(command)){
+			StaffTracker.Log.info("Incrementing existing command!");
+			int v = this.commands.get(command) + 1;
+			this.commands.put(command, v);
+		} else {
+			StaffTracker.Log.info("DEBUG : Adding new command!");
+			this.commands.put(command, 1);
+		}
+	}
+	
+	public String commandToString(){
+		String ret = "";
+		
+		for(String s : commands.keySet()){
+			ret += s + ":" + commands.get(s) + ",";
+		}
+		
+		return ret;
+	}
+	
 	public boolean getGhost(){return ghost;}
-	public void setGhost(){ghost = true;}
+	public void setGhost(ghostReason reason){ghost = true; this.reason = reason;}
 	
 	public String getGroup(){return group;}
 	public void setGroup(String group){
@@ -343,8 +386,19 @@ public class StaffRecord {
 				"\n§2In Creative : §9" + (creative ? "§aYes" : "§cNo") +
 				"\n§2Time In Creative Total : §9" + toHMSFormat(this.timeInCreative) +
 				"\n§2Socialspy On : §9" + (social ? "§aYes" : "§cNo") +
-				"\n§2Time In Socialspy Total : §9" + toHMSFormat(this.timeInSocialSpy) +
-				"§r";
+				"\n§2Time In Socialspy Total : §9" + toHMSFormat(this.timeInSocialSpy);
+		
+		if(commands.isEmpty()){
+			out += "\n§2No tracked commands used!";
+		} else {
+			out += "\n§2Command Usage : ";
+		
+			for(String s : commands.keySet()){
+				out += "\n    " + s + " : §9" + commands.get(s);
+			}
+		}
+		
+		out += "§r";
 				
 		return out;
 				
@@ -381,6 +435,16 @@ public class StaffRecord {
 			out += "\n§2Time In SocialSpy Total : §9" + toHMSFormat(this.timeInSocialSpy) + " (" + String.format("%.0f", perc) + "%)"; 
 		} else {
 			out += "\n§2Time In SocialSpy Total : §9" + toHMSFormat(this.timeInSocialSpy);
+		}
+		
+		if(commands.isEmpty()){
+			out += "\n§2No tracked commands used!";
+		} else {
+			out += "\n§2Command Usage : ";
+		
+			for(String s : commands.keySet()){
+				out += "\n    /" + s + " : §9" + commands.get(s);
+			}
 		}
 		
 		out += "§r";

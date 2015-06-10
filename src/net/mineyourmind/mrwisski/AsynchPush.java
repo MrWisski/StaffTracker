@@ -171,7 +171,8 @@ public class AsynchPush implements Runnable {
 								" TIMEVANISH = ?, " +
 								" TIMECREATIVE = ?, " +
 								" TIMESOCIALSPY = ?, " +
-								" PGROUP = ? " + 
+								" PGROUP = ?, " + 
+								" COMMANDCSV = ? " +
 								"where NAME = ?");
 				update.setString(1, r.getServer());
 				update.setBoolean(2, r.getOp());
@@ -184,7 +185,8 @@ public class AsynchPush implements Runnable {
 				update.setLong(9, r.getTimeInCreative());
 				update.setLong(10, r.getTimeInSocialSpy());
 				update.setString(11, r.getGroup());
-				update.setString(12, r.getName());
+				update.setString(12, r.commandToString());
+				update.setString(13, r.getName());
 				update.executeUpdate();	
 			} else{
 				update = sqldb.getConnection().prepareStatement(
@@ -201,8 +203,9 @@ public class AsynchPush implements Runnable {
 								"TIMELOGGED, "+
 								"TIMEVANISH, "+
 								"TIMECREATIVE, "+
-								"TIMESOCIALSPY) "+
-						"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+								"TIMESOCIALSPY, "+
+								"COMMANDCSV) " + 
+						"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 				update.setString(1, r.getUUID().toString());
 				update.setString(2, r.getName());
 				update.setString(3, r.getServer());
@@ -216,10 +219,11 @@ public class AsynchPush implements Runnable {
 				update.setLong(11, r.getTimeInVanish());
 				update.setLong(12, r.getTimeInCreative());
 				update.setLong(13, r.getTimeInSocialSpy());
+				update.setString(14, r.commandToString());
 				update.executeUpdate();
 			}
 		} catch (SQLException e) {
-			this.callHome("SYNCH DEBUG : Exception in push - " + e.getMessage());
+			this.callHome("SYNCH DEBUG : Exception in push for " + r.getName() + " - " + e.getMessage());
 			//Log.severe("Failed AsynchPush to DB T_T");
 			return false;
 		} finally {

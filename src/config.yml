@@ -1,5 +1,5 @@
 #DO NOT CHANGE, internal use only. Changing this will reset your entire config!
-configver: 5
+configver: 6
 
 plugin:
   enabled: true
@@ -8,7 +8,7 @@ plugin:
   useessentials: true
   usezperms: true
 #Debug mode, can get a wee bit spammy.
-  debug: false
+  debug: true
 
 stafftracker:
 #how often do we update, in seconds.
@@ -33,6 +33,21 @@ stafftracker:
 extra:
 #If true, any non-staff member will have socialspy removed!
   staffOnlySocialSpy: true
+
+#Commands staff members use, that you want to track.
+#Format <Command, minus />:<state> where state =
+#'other' - track when this command is used with an argument that is NOT the staff members name!
+#'self' - track when this command is used with an arguement that IS the staff members name!
+#'all' - track this command regardless of arguments!
+#NOTE : tracking matches, or does not match, the player name (ignores caps!). /kill zombie, if kill:'other' is used, 
+#   WILL add a usage for the Kill command. To maximize flexibility, tracking does NOT care if the command executed,
+#   or not! Furthermore, toggle commands (/god, for instance), will count for both toggling on AND off!
+#NOTE : If you change this list, and remove commands - those commands will REMAIN LISTED!
+tracks:
+  kill: 'other'
+  oi: 'all'
+  god: 'all'
+  fly: 'all'
 
 mysql:
   driver: com.mysql.jdbc.Driver
