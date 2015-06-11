@@ -4,6 +4,7 @@
 This project is currently in ALPHA, but will be moving to BETA soon!
 
 Built with bukkit-1.6.4-R2.0
+
 Hard Plugin Dependencies : None! ^_^
 
 Soft Plugin Dependencies :
@@ -23,7 +24,7 @@ Tested extensively on Spigot 1.8.4, 1.7.10, and 1.6.4, as well as Cauldron 1.7.1
 		
 ####Automatically determines the name of the server (either through server.properties, 	or server folder name), as well as Minecraft version.
 		
-#####Tracks the following states (on/off) and duration (how long the member was in that state) for staff members :
+####Tracks the following states (on/off) and duration (how long the member was in that state) for staff members :
  - VanishNoPacket Vanish or Essentials Vanish
  - Creative Game Mode
  - Essentials SocialSpy	
@@ -45,13 +46,13 @@ Tested extensively on Spigot 1.8.4, 1.7.10, and 1.6.4, as well as Cauldron 1.7.1
 
 
 Example configuration :
-`
-tracks:
-	kill: 'other' 	#tracks when a staff members kills someone, but not suicides
-	oi: 'all'			#tracks all uses of /oi
-	god: 'all'		#tracks all uses of /god
-	op: 'other'		#tracks all uses of /op when used on other people.
-`
+
+	tracks:
+		kill: 'other' 	#tracks when a staff members kills someone, but not suicides
+		oi: 'all'			#tracks all uses of /oi
+		god: 'all'		#tracks all uses of /god
+		op: 'other'		#tracks all uses of /op when used on other people.
+
 	
 ####mySQL Data Storage
 Stores data in a configured mySQL database. synch reads/asynch writes to prevent
