@@ -21,22 +21,36 @@ public class AsynchPush implements Runnable {
 	public boolean state = false;
 	private BukkitScheduler bs;
 	
+	
+	//For efficiencies sake, this flag sets if we're running in synchronous mode - IE
+	//we have to push an update in the main server thread due to the server shutting down.
+	private boolean runSynch = false;
+	
 	//List of staffnames that need to be removed from staffInd IF we succeed.
 	public List<String> removelist = new ArrayList<String>();	
 
-	private void callHome(final String msg){
-		BukkitRunnable r = new BukkitRunnable() {
-			String m = msg;
-            @Override
-            public void run() {
-                StaffTracker.Log.info(m);
-            }
-        };
-        
-        bs.scheduleSyncDelayedTask(StaffTracker.instance, r, 0);
-        
+	//To use, create the class, and construct it normally...and then .run(). should push to DB
+	//in the main thread.
+	public void runSynch(){
+		runSynch = true;
 	}
 	
+	private void callHome(final String msg){
+		if(!runSynch){
+			BukkitRunnable r = new BukkitRunnable() {
+				String m = msg;
+				@Override
+				public void run() {
+					StaffTracker.Log.info(m);
+				}
+			};
+
+			bs.scheduleSyncDelayedTask(StaffTracker.instance, r, 0);
+		} else {
+			StaffTracker.Log.info(msg);
+		}
+	}
+
 	AsynchPush(SQLDB db, BukkitScheduler sched, List<StaffRecord> rlist, String table, List<String> RemoveList){
 		sqldb = db;
 		bs = sched;

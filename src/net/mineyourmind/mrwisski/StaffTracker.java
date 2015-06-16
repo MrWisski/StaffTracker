@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
@@ -139,6 +140,7 @@ public final class StaffTracker extends JavaPlugin {
 					"TIMECREATIVE int NOT NULL,"+
 					"TIMESOCIALSPY int NOT NULL,"+
 					"COMMANDCSV text NULL, " +
+					"REMOVE boolean NULL," +
 					"PRIMARY KEY (NAME));");
 			
 //			CREATE TABLE IF NOT EXISTS stafftracker (PUUID varchar(36) NOT NULL, NAME varchar(16) NOT NULL, SERVER varchar(32) NOT NULL, PGROUP varchar(32) NOT NULL, OP boolean NOT NULL, LOGGEDIN boolean NOT NULL, VANISH boolean NOT NULL, CREATIVE boolean NOT NULL, SOCIALSPY boolean NOT NULL, TIMELOGGED int NOT NULL, TIMEVANISH int NOT NULL, TIMECREATIVE int NOT NULL, TIMESOCIALSPY int NOT NULL, COMMANDCSV text, PRIMARY KEY (NAME));
@@ -542,7 +544,7 @@ public final class StaffTracker extends JavaPlugin {
 		if(this.useSQL)
 			if(this.sqldb != null){
 				//Update all the records, and save them to DB.
-				this.updateAllRecords();
+				this.pushAllRecords();
 				//close out all our DB stuff.
 				this.sqldb.close();
 			}
@@ -560,10 +562,12 @@ public final class StaffTracker extends JavaPlugin {
 		sender.sendMessage("§a~~~~~~~~~~~~~~~~~~~");
 		sender.sendMessage("§2/" + label + " help §a- This screen!");
 		if(sender.isOp()) sender.sendMessage("§2/" + label + " reload §a- Re-loads the configs from disk - some settings still require a restart! (Requires Op)");
-		if(debug) sender.sendMessage("§c/" + label + " dumprec <playername> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
+		if(debug) sender.sendMessage("§c/" + label + " dumprec <Player Name> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
 		if(debug && sender.isOp()) sender.sendMessage("§c/" + label + " updateall - Forces internal staff recordset to be updated. (Requires Op)");
 		sender.sendMessage("§2/" + label + " list §a- Shows all online staff members.");
-		sender.sendMessage("§2/" + label + " show <Playername> §a- Shows stats for a given staffmember.");
+		sender.sendMessage("§2/" + label + " show <Player Name> §a- Shows stats for a given staffmember.");
+		//Disabled for now...
+		//sender.sendMessage("§2/" + label + " remove <Player Name> §a- Removes a staff member from the DB.");
 	}
 	
 	/** Command to dump an internal StaffRecord - Only works if debug == true! */
@@ -639,7 +643,11 @@ public final class StaffTracker extends JavaPlugin {
 	}
 	
 	public void commandShow(CommandSender sender, String[] args){
-		if(debug) Log.info("DEBUG : commandShow("+args[1]+")");
+		if(debug) Log.info("DEBUG : commandShow()");
+		if(args.length == 1){
+			sender.sendMessage("§cUsage is /st show <staff member name>.");
+			return;
+		}
 		
 		//Console or staff only!
 		if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.isStaff((Player)sender))){
@@ -690,6 +698,33 @@ public final class StaffTracker extends JavaPlugin {
 		}
 	}
 	
+	/** Removes a staff member from the DB, permanently. REQUIRES A CONFIRMATION COMMAND! */
+	private void commandRemove(CommandSender sender, String[] args){
+		if(args.length != 2){
+			sender.sendMessage("§cUsage is /st remove <staff member name>");
+			return;
+		}
+		if(args[1].length() == 0){
+			sender.sendMessage("§cUsage is /st remove <staff member name>");
+			return;
+		}
+		if(!this.recordExists(args[1])){
+			sender.sendMessage("§cCould not find a record for a staffmember named " + args[1] + ".");
+			sender.sendMessage("§aCheck your spelling and try again!");
+			return;
+		}
+		// generate a confirm string
+		String conf = this.generateRandomNumbers(4);
+		//put them into the confirm tracking
+		this.removeConfirm.put(conf, args[1]);
+		sender.sendMessage("§aPlease enter the command §e/st confirm " + conf +"§a to confirm deletion of this record.");
+		sender.sendMessage("§cPlease be advised this is a §4PERMANENT§c operation, and cannot be undone.");
+		sender.sendMessage("§cDeleted data cannot be recovered!");
+	}
+	
+	/** for /st remove <name> confirmation. */
+	private HashMap<String, String> removeConfirm = new HashMap<String, String>();
+	
 	/** Notification from Bukkit server that a command has been entered.*/
 	@Override
 	public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
@@ -702,6 +737,58 @@ public final class StaffTracker extends JavaPlugin {
 					commandHelp(sender, label);
 				} else {
 					switch(args[0]){
+					case "confirm":
+						if(sender instanceof Player){
+							if(!sender.hasPermission("stafftracker.remove")){
+								sender.sendMessage("§cYou don't have the permissions required to do this!");
+								return true;
+							}
+						}
+						
+						//If there isn't an arg[1] at all
+						if(args.length != 2){
+							sender.sendMessage("§cPlease enter your confirmation code!");
+							return true;
+						}
+						//if there is (?), but its nothing
+						if(args[1].length() == 0 || args[1].contentEquals("")){
+							sender.sendMessage("§cPlease enter your confirmation code!");
+							return true;
+						}
+						//is this a valid confirm code?
+						if(removeConfirm.containsKey(args[1])){
+							//does it STILL point to a valid record?
+							if(this.recordExists(removeConfirm.get(args[1]))){
+								if(this.removeRecordFromDB(removeConfirm.get(args[1]))){
+									sender.sendMessage("§aSuccessfully removed record for staff member " + removeConfirm.get(args[1]));
+									removeConfirm.remove(args[1]);
+									//print a message to the console/system log.
+									Log.info("Player " + sender.getName() + " deleted record for staff member " + removeConfirm.get(args[1]));
+									return true;
+								} else {
+									sender.sendMessage("§cSomething went wrong trying to remove that record - most likely a DB connection failure. Please try your confirmation code at a later time!");
+								}
+							} else {
+								sender.sendMessage("§cSeems like you've been ninja'd - that record no longer exists! :o");
+							}
+						} else {
+							sender.sendMessage("§cCouldn't find that confirmation code! Please check the sequence and try again!");
+						}
+
+
+						break;
+					case "remove":
+						if(sender instanceof Player){
+							if(sender.hasPermission("stafftracker.remove")){
+								this.commandRemove(sender, args);
+							} else {
+								sender.sendMessage("§cYou don't have the permissions required to do this!");
+							}
+						} else {
+							//console.
+							this.commandRemove(sender, args);
+						}
+						break;
 					case "dumprec":
 						if(debug && sender.isOp()) commandDumpRec(sender,args);
 						else sender.sendMessage("§cCommand requires the plugin be in Debug mode and you to be a server op!");
@@ -720,9 +807,12 @@ public final class StaffTracker extends JavaPlugin {
 						if(sender.isOp()){
 							this.myConfFile.loadConfig();
 							pluginConf = myConfFile.getConfig();
+							sender.sendMessage("§aConfigs reloaded!");
+							Log.info(sender.getName() + " forced a configuration reload from disk!");
 						} else {
 							sender.sendMessage("§cYou have to be a server op to do this!");
 						}
+						break;
 					default:
 						commandHelp(sender, label);
 						break;
@@ -966,6 +1056,32 @@ public final class StaffTracker extends JavaPlugin {
 		}
 	}
 
+	/** Pushes all the records we're storing to the DB - called at plugin shutdown.
+	 * IS NOT ASYNCH! Don't call this unless we really -have- to.
+	 * */
+	private void pushAllRecords(){
+		Enumeration<StaffRecord> staffe = staffInd.elements();
+		
+		//get EVERY record into the pushDB.
+		while(staffe.hasMoreElements()){
+			StaffRecord r = staffe.nextElement();
+			this.pushRecordToDB(r);
+		}
+		
+		//Not used, but needed for the push.
+		List<String> removelist = new ArrayList<String>();
+		//and finally, push our new thread
+		AsynchPush newpush = new AsynchPush(sqldb, this.getServer().getScheduler(),dbPushes, pluginConf.getString("mysql.table"), removelist);
+		//We call back from the asynch thread a lot - this lets the class know to NOT do that.
+		newpush.runSynch();
+		newpush.run();
+		if(newpush.failure == false && newpush.state == true){
+			Log.info("Pushed all records to the Database.");
+		} else {
+			Log.severe("Failed to push records to the database - we've lost some data here.");
+		}
+	}
+	
 	/** On a timer, we update all the records we have - this is the function that gets
 	 *  called from our scheduled task. 
 	 *  
@@ -1124,6 +1240,25 @@ public final class StaffTracker extends JavaPlugin {
 	///////////////////////////////////////////////////////////////////////////////////
 	public boolean recordsChecked = false;
 	
+	/** This function takes our string of tracked commands, and makes sure only currently tracked commands
+	 * 	are included. */
+	private String cleanTracking(String curtracks){
+		String ret = "";
+		String[] tempstring = curtracks.split(",", -1);
+		
+		for(String s : tempstring){
+			String[] tempstring2 = s.split(":", -1);
+			if(this.commandInd.containsKey(tempstring2[0])){
+				//This is a valid command we're tracking. awesome.
+				ret = ret + s + ",";
+			} else {
+				//No longer a valid command - so we'll just let it evaporate
+			}
+		}
+		
+		return ret;
+	}
+	
 	/** This function should ONLY be run on plugin startup! It checks to see if we exited gracefully last shutdown, and if not, closes the records out.*/
 	private void checkRecords(){
 		if(debug) Log.info("DEBUG : checkRecords()");
@@ -1210,7 +1345,8 @@ public final class StaffTracker extends JavaPlugin {
 			s = sqldb.getConnection().createStatement();
 			rs = s.executeQuery("select * from " + pluginConf.getString("mysql.table") + " where name = '" + p.getName() + "'");
 			if(rs.next()){
-				StaffRecord r = new StaffRecord(false, ghostReason.NA,rs.getString("PUUID"), rs.getString("NAME"), rs.getString("SERVER"), rs.getBoolean("OP"), rs.getString("PGROUP"), rs.getBoolean("LOGGEDIN"),rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"), rs.getString("COMMANDCSV"));
+				String cleantracks = this.cleanTracking(rs.getString("COMMANDCSV"));
+				StaffRecord r = new StaffRecord(false, ghostReason.NA,rs.getString("PUUID"), rs.getString("NAME"), rs.getString("SERVER"), rs.getBoolean("OP"), rs.getString("PGROUP"), rs.getBoolean("LOGGEDIN"),rs.getLong("TIMELOGGED"), rs.getLong("TIMEVANISH"),	rs.getLong("TIMECREATIVE"),	rs.getLong("TIMESOCIALSPY"), cleantracks);
 				rs.close();
 				s.close();
 				return r;
@@ -1253,7 +1389,33 @@ public final class StaffTracker extends JavaPlugin {
 		return true;
 	}
 
-
+	/** Deletes staffmember record from the DB*/
+	public boolean removeRecordFromDB(String Name){
+		if(debug) Log.info("DEBUG : removeRecordFromDB()");
+		
+		//Make sure we're connected to the DB.
+		if(!sqldb.connected){
+			if(!sqldb.connect()){
+				return false;
+			}
+		}
+		String query = "delete from " + pluginConf.getString("mysql.table") + " where NAME = ?";
+	    PreparedStatement preparedStmt;
+	    
+		try {
+			preparedStmt = this.sqldb.getConnection().prepareStatement(query);
+			preparedStmt.setString(1, Name);
+			preparedStmt.execute();
+			sqldb.close();
+			return true;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return false;
+		}
+	      
+		
+		
+	}
 
 	public boolean isStaff(Player p){
 		//do we need to add this player to the index?
@@ -1450,5 +1612,18 @@ public final class StaffTracker extends JavaPlugin {
 
 		}
 
+	}
+	
+	/**Generates a string of random numbers, suitable for a confirmation string
+	 * IE, len of 3 might return a string like "184" */
+	public String generateRandomNumbers(int len){
+		String ret = "";
+		
+		for(int x = 0; x < len; x++){
+			int n = (int)(Math.random() * 10);
+			ret += Integer.toString(n);
+		}
+		
+		return ret;
 	}
 }

@@ -43,6 +43,8 @@ Tested extensively on Spigot 1.8.4, 1.7.10, and 1.6.4, as well as Cauldron 1.7.1
 	It DOES NOT check for command success, nor does it care about valid arguments or anything. If you do not even have the OpenInventory plugin, but have /oi in the tracking list, if ANY staff member types /oi, the OI command track will be incremented! If you type /kill a, the kill command track will be incremented - unless YOUR in game name is 'a' ;)
 		
 	The player name is expected to be the first argument, directly after the space following the command. if the player name is an argument AFTER the first then you must use 'all' to get anything like expected results.
+	
+	Each load from database, the current command track list is checked against the configured tracks, and any mismatches are permanently discarded!
 
 
 Example configuration :
@@ -59,20 +61,19 @@ Stores data in a configured mySQL database. synch reads/asynch writes to prevent
 	clogging up the main server thread. Use a single, global SQL server to allow your
 	servers to share this data between them!
 	
-	
-##Pending Feature list :
+
+
+#Pending Feature list :
 	Configuration additions :
 		1. Allow configuration of server name in config.
 		2. Allow single permission list, same as permission groups.
 	
-	Send the list of tracked commands to the StaffRecord class, so it can purge commands
-	that we're no longer tracking and keep the DB clean.
+	/st remove <player> command to remove a staff member from the DB.
 	
-	"Remove" command to remove a staff member from the DB.
-	
-	Various permissions, so that a base-level staff member can't pull up detailed 
-	records for anyone/everyone, for instance.
+	[Implemented] Various permissions, so that a base-level staff member can't pull up detailed 	records for anyone/everyone, for instance.
 		stafftracker.ViewDetails, stafftracker.RemoveRecord
+		
+	Make the commands all respect the permissions!
 	
 	Staff Group Config to replace the current config section :
 		
@@ -115,11 +116,9 @@ Stores data in a configured mySQL database. synch reads/asynch writes to prevent
 	Track AFK state/duration.
 	
 	Track God/Fly state/duration.
-	
-	Track states/durations per day, week, and month.
 
     
-##May become pending features :
+#May become pending features :
 		Non-SQL storage method for standalone servers?
     	WorldBorder bypass state?
     	
@@ -136,6 +135,6 @@ Stores data in a configured mySQL database. synch reads/asynch writes to prevent
     	Give players access to /st need? Though, really, isn't that what we have ticket
     	systems for? ^_^
     	
-    	
+    	Track states/durations per day, week, and month?
 
 Feel free to make suggestions!
