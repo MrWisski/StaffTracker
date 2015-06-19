@@ -10,17 +10,16 @@ website: https://github.com/MrWisski/StaffTracker
 commands:
    st:
       description: StaffTracker help
-      usage: /st help
-      default: op
+      usage: /st
       permission: stafftracker.use
       
 permissions:
    stafftracker.viewdetails:
       description: make use of the /st show <player> command
-      default: op
+      default: false
    stafftracker.removerecord:
       description: make use of the /st remove <player> command
       default: false
    stafftracker.use:
       description: make use of the /st command
-      default: op
+      default: true

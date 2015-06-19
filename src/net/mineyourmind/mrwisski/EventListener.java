@@ -18,18 +18,18 @@ public class EventListener implements Listener {
 		String label = "";
 		
 		String preproc[] = event.getMessage().split(" ");
-		StaffTracker.Log.info("DEBUG : PCPE length is " + preproc.length);
+		if(StaffTracker.instance.debug) StaffTracker.Log.info("DEBUG : PCPE length is " + preproc.length);
 		
 		int count = 0;
 		for(String s : preproc){
-			StaffTracker.Log.info("DEBUG : preproc[" + count + "] == " + s);
+			if(StaffTracker.instance.debug)StaffTracker.Log.info("DEBUG : preproc[" + count + "] == " + s);
 			if(count == 0){
 				label = s;
 				Command = s.substring(1, s.length());
-				StaffTracker.Log.info("DEBUG : Command = " + Command + " -- Label == " + label);
+				if(StaffTracker.instance.debug)StaffTracker.Log.info("DEBUG : Command = " + Command + " -- Label == " + label);
 			} else {
 				ArgList.add(s);
-				StaffTracker.Log.info("DEBUG : added argument : " + s);
+				if(StaffTracker.instance.debug)StaffTracker.Log.info("DEBUG : added argument : " + s);
 			}
 			count++;
 		}

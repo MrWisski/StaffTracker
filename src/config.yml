@@ -21,12 +21,7 @@ stafftracker:
 #IMPORTANT NOTE : This is currently -A- permission. just one!
   staffPerms: staff
 #The groups staff have that makes them staff. REQUIRES VAULT OR ESSENTIALS!
-  staffGroups:
-    -mod
-    -coadmin
-    -admin
-    -manager
-    -founder
+  staffGroups: [jrmod, mod, srmod, admin, dev]
 #Should the plugin ignore Operator status in the list, regardless of staffOp?
   ignoreOP: false
 

@@ -246,7 +246,7 @@ public final class StaffTracker extends JavaPlugin {
 				Log.info("Using Essentials!");
 				if(tryEssentialsPerms){
 					this.essPerms = essentials.getPermissionsHandler();
-					if(pluginConf.getBoolean("stafftracker.staffGroups") && this.essPerms == null){
+					if(pluginConf.getBoolean("stafftracker.staffGroup") && this.essPerms == null){
 						Log.severe("Fallback to Essentials Permissions failed : Disabling plugin as it cannot operate as configured!");
 						Log.severe("Either DISABLE group permissions config, or INSTALL vault or essentials!");
 						return false;	
@@ -267,11 +267,11 @@ public final class StaffTracker extends JavaPlugin {
 				}
 			}
 		} else if(tryEssentialsPerms) {
-			if(pluginConf.getBoolean("stafftracker.staffGroups"))
-			Log.severe("Fallback to Essentials Permissions failed : Disabling plugin as it cannot operate as configured!");
-			Log.severe("Either DISABLE group permissions config, or install vault or essentials!");
-			return false;
-			
+			if(pluginConf.getBoolean("stafftracker.staffGroup")){
+				Log.severe("Fallback to Essentials Permissions failed : Disabling plugin as it cannot operate as configured!");
+				Log.severe("Either DISABLE group permissions config, or install vault or essentials!");
+				return false;
+			}
 		}
 		
 		//Check and see if we're using Vanish No Packet
@@ -487,13 +487,18 @@ public final class StaffTracker extends JavaPlugin {
 		
 		if(debug) this.getLogger().info("DEBUG : essentials and staffgroup sanity check");
 		
-		if(staffGroups == null && pluginConf.getBoolean("stafftracker.staffGroup") == true){
+		if(pluginConf.getBoolean("stafftracker.staffGroup") == true){
 			//since we need Essentials to do group checking, lets just make sure essentials
 			//was *actually* enabled in the config, and we have a valid link to it
 			//ADDED : vault's permissions - we can use either one.
 			//TODO : Replace with a perms gateway class to handle this mess.
 			if(this.essPerms != null || this.permission != null){
-				staffGroups = pluginConf.getStringList("stafftracker.staffGroups");
+				this.staffGroups = pluginConf.getStringList("stafftracker.staffGroups");
+				String g = "";
+				for(String s : staffGroups){
+					g += "'" + s + "', ";
+				}
+				if(debug) Log.info("Got " + staffGroups.size() + " permission group entries : " + g);
 			} else {
 				//Honestly, we should have caught this earlier than here, but...better safe than
 				//NPE, yeah? ^_^
@@ -555,19 +560,42 @@ public final class StaffTracker extends JavaPlugin {
 		getLogger().info("StaffTracker disabled successfully!");
 	}
 		
+	public boolean hasPerm(String name, String perm){
+		if(debug) Log.info("hasPerm(" + name + ", " + perm + ")");
+		
+		Player p = this.getServer().getPlayer(name);
+		if(p == null){
+			Log.warning("Player '" + name + "' did not return a valid player!");
+			return false;
+		}
+		
+		if(this.permission != null){ // use vault!
+			
+			return this.permission.has(p, perm);
+			
+		} else if(pluginConf.getBoolean("plugin.useessentials") && this.essPerms != null){ // use essentials!
+			return essPerms.hasPermission(p, perm);
+		} else {
+			return p.hasPermission(perm);
+		}
+		
+		
+	}
+	
 	/** Displays the help command for this plugin */
 	private void commandHelp(CommandSender sender, String label){
 		//TODONE : Colorize!
-		sender.sendMessage("§2Staff§aTracker §2Help :");
-		sender.sendMessage("§a~~~~~~~~~~~~~~~~~~~");
-		sender.sendMessage("§2/" + label + " help §a- This screen!");
-		if(sender.isOp()) sender.sendMessage("§2/" + label + " reload §a- Re-loads the configs from disk - some settings still require a restart! (Requires Op)");
-		if(debug) sender.sendMessage("§c/" + label + " dumprec <Player Name> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
-		if(debug && sender.isOp()) sender.sendMessage("§c/" + label + " updateall - Forces internal staff recordset to be updated. (Requires Op)");
-		sender.sendMessage("§2/" + label + " list §a- Shows all online staff members.");
-		sender.sendMessage("§2/" + label + " show <Player Name> §a- Shows stats for a given staffmember.");
+		sender.sendMessage("§2[Staff§aTracker§2] §2Staff§aTracker §2Help :");
+		sender.sendMessage("§2[Staff§aTracker§2] §a~~~~~~~~~~~~~~~~~~~");
+		sender.sendMessage("§2[Staff§aTracker§2] §2/" + label + " help §a- This screen!");
+		if(sender.isOp()) sender.sendMessage("§2[Staff§aTracker§2] §2/" + label + " reload §a- Re-loads the configs from disk - some settings still require a restart! (Requires Op)");
+		if(debug && sender.isOp()) sender.sendMessage("§2[Staff§aTracker§2] §c/" + label + " dumprec <Player Name> - Displays internal staff recordset, or an entry for player <playername>, if one exists.");
+		if(debug && sender.isOp()) sender.sendMessage("§2[Staff§aTracker§2] §c/" + label + " updateall - Forces internal staff recordset to be updated. (Requires Op)");
+		sender.sendMessage("§2[Staff§aTracker§2] §2/" + label + " list §a- Shows all online staff members.");
+		if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.hasPerm(sender.getName(), "stafftracker.viewdetails"))) 
+			sender.sendMessage("§2[Staff§aTracker§2] §2/" + label + " show <Player Name> §a- Shows stats for a given staffmember.");
 		//Disabled for now...
-		//sender.sendMessage("§2/" + label + " remove <Player Name> §a- Removes a staff member from the DB.");
+		//sender.sendMessage("§2[Staff§aTracker§2] §2/" + label + " remove <Player Name> §a- Removes a staff member from the DB.");
 	}
 	
 	/** Command to dump an internal StaffRecord - Only works if debug == true! */
@@ -578,7 +606,7 @@ public final class StaffTracker extends JavaPlugin {
 			if(staffInd.containsKey(args[1])){
 				sender.sendMessage(staffInd.get(args[1]).toString());
 			} else {
-				sender.sendMessage("§cPlayer is not logged into this server, or isn't detected as staff!");
+				sender.sendMessage("§2[Staff§aTracker§2] §cPlayer is not logged into this server, or isn't detected as staff!");
 			}
 			
 		} else {
@@ -586,7 +614,7 @@ public final class StaffTracker extends JavaPlugin {
 			while(staffe.hasMoreElements()){
 				StaffRecord r = staffe.nextElement();
 				
-				sender.sendMessage("\n" + r.toString() + "\n");
+				sender.sendMessage("§2[Staff§aTracker§2] \n" + r.toString() + "\n");
 			}
 		}	
 	}
@@ -596,7 +624,7 @@ public final class StaffTracker extends JavaPlugin {
 		if(debug){
 			Log.info(sender.getName() + " Forced internal recordset update.");
 			this.updateAllRecords();
-			sender.sendMessage("All records updated!");
+			sender.sendMessage("§2[Staff§aTracker§2] All records updated!");
 		}
 		
 	}
@@ -607,7 +635,7 @@ public final class StaffTracker extends JavaPlugin {
 			if(debug) Log.info("== console, sender instanceof Player & isstaff()");
 			if(!sqldb.isConnected()){
 				if(!sqldb.connect()){
-					sender.sendMessage("§cSorry, couldn't establish a connection to the database. Please try again in a little while!");
+					sender.sendMessage("§2[Staff§aTracker§2] §cSorry, couldn't establish a connection to the database. Please try again in a little while!");
 					return;
 				}				
 				
@@ -621,31 +649,32 @@ public final class StaffTracker extends JavaPlugin {
 				int numrec = 0;
 				while(rs.next()){
 					numrec++;
-					sender.sendMessage("§2" + rs.getString("PGROUP") + " §f| §a" + rs.getString("NAME") + "§f | §9" + rs.getString("SERVER"));
+					sender.sendMessage("§2[Staff§aTracker§2] §2" + rs.getString("PGROUP") + " §f| §a" + rs.getString("NAME") + "§f | §9" + rs.getString("SERVER"));
 				}
 				
 				if(numrec == 0){
 					//This makes sense because we may have it configurable that non-staff can
 					//access this command...
-					sender.sendMessage("§cSorry, no staff are online right now!");
+					sender.sendMessage("§2[Staff§aTracker§2] §cSorry, no staff are online right now!");
 				} else {
-					sender.sendMessage("§2Displayed §a" + numrec + "§2 records.");
+					sender.sendMessage("§2[Staff§aTracker§2] §2Displayed §a" + numrec + "§2 records.");
 				}
 				rs.close();
 				s.close();
 			} catch (SQLException e) {
 				e.printStackTrace();
+				sender.sendMessage("§2[Staff§aTracker§2] §cSorry, there was an internal error when attempting the command - please check the server console or log file for details!");
 			}
 			
 		} else {
-			sender.sendMessage("§cSorry, currently, only staff members can use this command.");
+			sender.sendMessage("§2[Staff§aTracker§2] §cSorry, currently, only staff members can use this command.");
 		}
 	}
 	
 	public void commandShow(CommandSender sender, String[] args){
 		if(debug) Log.info("DEBUG : commandShow()");
 		if(args.length == 1){
-			sender.sendMessage("§cUsage is /st show <staff member name>.");
+			sender.sendMessage("§2[Staff§aTracker§2] §cUsage is /st show <staff member name>.");
 			return;
 		}
 		
@@ -654,7 +683,7 @@ public final class StaffTracker extends JavaPlugin {
 			
 			if(!sqldb.isConnected()){
 				if(!sqldb.connect()){
-					sender.sendMessage("§cSorry, couldn't establish a connection to the database. Please try again in a little while!");
+					sender.sendMessage("§2[Staff§aTracker§2] §cSorry, couldn't establish a connection to the database. Please try again in a little while!");
 					return;
 				}				
 				
@@ -680,46 +709,47 @@ public final class StaffTracker extends JavaPlugin {
 						query.close();
 					}  else {
 						if(debug) Log.info("DEBUG : commandShow(" + args[1] + ") - record for this player exists, recordset returned no results T_T");
-						sender.sendMessage("§cSorry, but for some reason, the record for that staff member couldn't be pulled from the database.");
+						sender.sendMessage("§2[Staff§aTracker§2] §cSorry, but for some reason, the record for that staff member couldn't be pulled from the database.");
 						rs.close();
 						query.close();				
 					}
 				} else {
-					sender.sendMessage("§cSorry, but no record for that staff member exists. Check your spelling, and try again!");
+					sender.sendMessage("§2[Staff§aTracker§2] §cSorry, but no record for that staff member exists. Check your spelling, and try again!");
 				}
 			} catch (SQLException e) {
 				e.printStackTrace();
-				sender.sendMessage("§cSorry, but an internal error has occured. Please check the console, or the server log, for more details.");
+				sender.sendMessage("§2[Staff§aTracker§2] §cSorry, but an internal error has occured. Please check the console, or the server log, for more details.");
 			}
 			
 			
 		} else {
-			sender.sendMessage("§cSorry, currently, only staff members can use this command.");
+			sender.sendMessage("§2[Staff§aTracker§2] §cSorry, currently, only staff members can use this command.");
 		}
 	}
 	
 	/** Removes a staff member from the DB, permanently. REQUIRES A CONFIRMATION COMMAND! */
+	@SuppressWarnings("unused")
 	private void commandRemove(CommandSender sender, String[] args){
 		if(args.length != 2){
-			sender.sendMessage("§cUsage is /st remove <staff member name>");
+			sender.sendMessage("§2[Staff§aTracker§2] §cUsage is /st remove <staff member name>");
 			return;
 		}
 		if(args[1].length() == 0){
-			sender.sendMessage("§cUsage is /st remove <staff member name>");
+			sender.sendMessage("§2[Staff§aTracker§2] §cUsage is /st remove <staff member name>");
 			return;
 		}
 		if(!this.recordExists(args[1])){
-			sender.sendMessage("§cCould not find a record for a staffmember named " + args[1] + ".");
-			sender.sendMessage("§aCheck your spelling and try again!");
+			sender.sendMessage("§2[Staff§aTracker§2] §cCould not find a record for a staffmember named " + args[1] + ".");
+			sender.sendMessage("§2[Staff§aTracker§2] §aCheck your spelling and try again!");
 			return;
 		}
 		// generate a confirm string
 		String conf = this.generateRandomNumbers(4);
 		//put them into the confirm tracking
 		this.removeConfirm.put(conf, args[1]);
-		sender.sendMessage("§aPlease enter the command §e/st confirm " + conf +"§a to confirm deletion of this record.");
-		sender.sendMessage("§cPlease be advised this is a §4PERMANENT§c operation, and cannot be undone.");
-		sender.sendMessage("§cDeleted data cannot be recovered!");
+		sender.sendMessage("§2[Staff§aTracker§2] §aPlease enter the command §e/st confirm " + conf +"§a to confirm deletion of this record.");
+		sender.sendMessage("§2[Staff§aTracker§2] §cPlease be advised this is a §4PERMANENT§c operation, and cannot be undone.");
+		sender.sendMessage("§2[Staff§aTracker§2] §cDeleted data cannot be recovered!");
 	}
 	
 	/** for /st remove <name> confirmation. */
@@ -737,22 +767,30 @@ public final class StaffTracker extends JavaPlugin {
 					commandHelp(sender, label);
 				} else {
 					switch(args[0]){
+					case "debug":
+						if(getServer().getConsoleSender() == sender){
+							this.debug = !this.debug;
+						} else if(sender instanceof Player && this.isStaff((Player)sender) && sender.isOp()){
+							this.debug = !this.debug;
+						}
+						
+						break;
 					case "confirm":
 						if(sender instanceof Player){
 							if(!sender.hasPermission("stafftracker.remove")){
-								sender.sendMessage("§cYou don't have the permissions required to do this!");
+								sender.sendMessage("§2[Staff§aTracker§2] §cYou don't have the permissions required to do this!");
 								return true;
 							}
 						}
 						
 						//If there isn't an arg[1] at all
 						if(args.length != 2){
-							sender.sendMessage("§cPlease enter your confirmation code!");
+							sender.sendMessage("§2[Staff§aTracker§2] §cPlease enter your confirmation code!");
 							return true;
 						}
 						//if there is (?), but its nothing
-						if(args[1].length() == 0 || args[1].contentEquals("")){
-							sender.sendMessage("§cPlease enter your confirmation code!");
+						if(args[1].length() == 0){
+							sender.sendMessage("§2[Staff§aTracker§2] §cPlease enter your confirmation code!");
 							return true;
 						}
 						//is this a valid confirm code?
@@ -760,57 +798,65 @@ public final class StaffTracker extends JavaPlugin {
 							//does it STILL point to a valid record?
 							if(this.recordExists(removeConfirm.get(args[1]))){
 								if(this.removeRecordFromDB(removeConfirm.get(args[1]))){
-									sender.sendMessage("§aSuccessfully removed record for staff member " + removeConfirm.get(args[1]));
+									sender.sendMessage("§2[Staff§aTracker§2] §aSuccessfully removed record for staff member " + removeConfirm.get(args[1]));
 									removeConfirm.remove(args[1]);
 									//print a message to the console/system log.
 									Log.info("Player " + sender.getName() + " deleted record for staff member " + removeConfirm.get(args[1]));
 									return true;
 								} else {
-									sender.sendMessage("§cSomething went wrong trying to remove that record - most likely a DB connection failure. Please try your confirmation code at a later time!");
+									sender.sendMessage("§2[Staff§aTracker§2] §cSomething went wrong trying to remove that record - most likely a DB connection failure. Please try your confirmation code at a later time!");
 								}
 							} else {
-								sender.sendMessage("§cSeems like you've been ninja'd - that record no longer exists! :o");
+								sender.sendMessage("§2[Staff§aTracker§2] §cSeems like you've been ninja'd - that record no longer exists! :o");
 							}
 						} else {
-							sender.sendMessage("§cCouldn't find that confirmation code! Please check the sequence and try again!");
+							sender.sendMessage("§2[Staff§aTracker§2] §cCouldn't find that confirmation code! Please check the sequence and try again!");
 						}
 
 
 						break;
 					case "remove":
+						sender.sendMessage("§2[Staff§aTracker§2] [StaffTracker] This command is COMING SOON!");
+						return true;
+						/*
 						if(sender instanceof Player){
 							if(sender.hasPermission("stafftracker.remove")){
 								this.commandRemove(sender, args);
 							} else {
-								sender.sendMessage("§cYou don't have the permissions required to do this!");
+								sender.sendMessage("§2[Staff§aTracker§2] §cYou don't have the permissions required to do this!");
 							}
 						} else {
 							//console.
 							this.commandRemove(sender, args);
 						}
-						break;
+						break;*/
 					case "dumprec":
 						if(debug && sender.isOp()) commandDumpRec(sender,args);
-						else sender.sendMessage("§cCommand requires the plugin be in Debug mode and you to be a server op!");
+						else sender.sendMessage("§2[Staff§aTracker§2] §cCommand requires the plugin be in Debug mode and you to be a server op!");
 						break;
 					case "updateall":
 						if(debug && sender.isOp()) commandForceUpdateAllRecords(sender);
-						else sender.sendMessage("§cCommand requires the plugin be in Debug mode and you to be a server op!");
+						else sender.sendMessage("§2[Staff§aTracker§2] §cCommand requires the plugin be in Debug mode and you to be a server op!");
 						break;
 					case "list":
 						commandList(sender);
 						break;
 					case "show":
-						commandShow(sender, args);
+						if(getServer().getConsoleSender() == sender || (sender instanceof Player && this.hasPerm(sender.getName(), "stafftracker.viewdetails"))){
+							commandShow(sender, args);
+						} else {
+							sender.sendMessage("§2[Staff§aTracker§2] §cYou don't have permission for that command!");
+						}
+						
 						break;
 					case "reload":
 						if(sender.isOp()){
 							this.myConfFile.loadConfig();
 							pluginConf = myConfFile.getConfig();
-							sender.sendMessage("§aConfigs reloaded!");
+							sender.sendMessage("§2[Staff§aTracker§2] §aConfigs reloaded!");
 							Log.info(sender.getName() + " forced a configuration reload from disk!");
 						} else {
-							sender.sendMessage("§cYou have to be a server op to do this!");
+							sender.sendMessage("§2[Staff§aTracker§2] §cYou have to be a server op to do this!");
 						}
 						break;
 					default:
@@ -882,8 +928,8 @@ public final class StaffTracker extends JavaPlugin {
 			Log.info("Starting update timer!");
 
 			//start our timer!
-			@SuppressWarnings("unused")
-			BukkitTask updateTimer = new ScheduledTask(this).runTaskTimer(this, interval, interval);
+			this.updateTimer = new ScheduledTask(this).runTaskTimer(this, interval, interval);
+			
 		}
 
 		//Do we already have this player in the index?
@@ -959,7 +1005,7 @@ public final class StaffTracker extends JavaPlugin {
 					//If we're using staff Groups, it'd be nice to add which group they're in
 					//to the staff record....
 					String sgroup = "";
-					if(pluginConf.getBoolean("stafftracker.staffGroups")){
+					if(pluginConf.getBoolean("stafftracker.staffGroup")){
 						List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
 						Iterator<String> groupItr = pgroups.iterator();
 						while(groupItr.hasNext())  {
@@ -992,7 +1038,7 @@ public final class StaffTracker extends JavaPlugin {
 				//If we're using staff Groups, it'd be nice to add which group they're in
 				//to the staff record....
 				String sgroup = "";
-				if(pluginConf.getBoolean("stafftracker.staffGroups")){
+				if(pluginConf.getBoolean("stafftracker.staffGroup")){
 					List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
 					Iterator<String> groupItr = pgroups.iterator();
 					while(groupItr.hasNext())  {
@@ -1382,7 +1428,7 @@ public final class StaffTracker extends JavaPlugin {
 			dbPushes.remove(replace);
 			this.dbPushes.add(r);
 		} else {
-			if(debug) Log.info("Added " + r.getName() + " to the record push list");
+			if(debug) Log.info("DEBUG : Added " + r.getName() + " to the record push list");
 			this.dbPushes.add(r);
 		}
 		
@@ -1473,15 +1519,13 @@ public final class StaffTracker extends JavaPlugin {
 			if(debug) this.getLogger().info("DEBUG : Not configured to use VNP.");
 		}
 
-		//...and from essentials (/evanish)
+		//...and/or from essentials (/evanish)
 		if(pluginConf.getBoolean("plugin.useessentials")){
 			//if we're already vanished, don't worry about re-confirming!
 			if(isVanished == false){
 				if(debug) this.getLogger().info("DEBUG : checking essentials for vanished players...");
 				List<String> vp = this.essentials.getVanishedPlayers();
-				for(String n : vp){
-					if(debug) this.getLogger().info(n + "\n");
-				}
+
 				if(vp.contains(p.getName())){
 					isVanished = true;
 					if(debug) this.getLogger().info("DEBUG : Found player - he/she is vanished.");
@@ -1506,6 +1550,39 @@ public final class StaffTracker extends JavaPlugin {
 		
 		r.setLoggedIn(this.getServer().getPlayer(p.getName()).isOnline());
 
+		//If we're using staff Groups, it'd be nice to update which group they're in
+		//to the staff record....
+		String sgroup = "Staff";
+		if(pluginConf.getBoolean("stafftracker.staffGroup")){
+			if(this.permission != null){
+				String pgroups[] = permission.getPlayerGroups(p);
+				for(String s : pgroups){
+					if(debug) Log.info("Checking vault perm group " + s);
+						if(this.staffGroups.contains(s)){
+							if(debug) Log.info("Yup.");
+						
+							sgroup = s;
+							break;
+						}
+					if(debug) Log.info("Nope.");
+				}
+			} else {
+				List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
+				for(String s : pgroups){
+					if(debug) Log.info("Checking essentials perm group " + s);
+						if(this.staffGroups.contains(s)){
+							if(debug) Log.info("Yup.");
+						
+							sgroup = s;
+							break;
+						}
+					if(debug) Log.info("Nope.");
+				}
+			}
+		}
+
+		r.setGroup(sgroup);	
+		
 		//finally, update the record. otherwise, what's the point, right?
 		staffInd.put(p.getName(), r);
 		

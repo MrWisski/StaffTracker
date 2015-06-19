@@ -41,13 +41,13 @@ public class AsynchPush implements Runnable {
 				String m = msg;
 				@Override
 				public void run() {
-					StaffTracker.Log.info(m);
+					if(StaffTracker.instance.debug) StaffTracker.Log.info(m);
 				}
 			};
 
 			bs.scheduleSyncDelayedTask(StaffTracker.instance, r, 0);
 		} else {
-			StaffTracker.Log.info(msg);
+			if(StaffTracker.instance.debug) StaffTracker.Log.info(msg);
 		}
 	}
 
