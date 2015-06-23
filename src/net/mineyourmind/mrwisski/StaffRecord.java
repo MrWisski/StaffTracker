@@ -110,7 +110,7 @@ public class StaffRecord {
 	}
 	
 	public boolean unGhost(String name, long timeon, long timevanish, long timecreative, long timesocial){
-		
+		if(StaffTracker.getInstance().debug) StaffTracker.Log.info("unGhost()");
 		if(this.name.equals(name) && this.ghost){
 			this.timeInGame += timeon;
 			this.timeInVanish += timevanish;
@@ -157,7 +157,14 @@ public class StaffRecord {
 	}
 	
 	public boolean getGhost(){return ghost;}
-	public void setGhost(ghostReason reason){ghost = true; this.reason = reason;}
+	public void setGhost(ghostReason reason){
+		this.timeInGame = 0;
+		this.timeInVanish = 0;
+		this.timeInCreative = 0;
+		this.timeInSocialSpy = 0;
+		ghost = true; 
+		this.reason = reason;
+	}
 	
 	public String getGroup(){return group;}
 	public void setGroup(String group){

@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Hashtable;
-import java.util.Iterator;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -933,8 +932,6 @@ public final class StaffTracker extends JavaPlugin {
 		}
 
 		//Do we already have this player in the index?
-		//Note, if we still haven't checked records, we need to ghost this staff member
-		//who has logged in before we finish!
 		if(staffInd.containsKey(p.getName())){
 
 			StaffRecord rec = staffInd.get(p.getName());
@@ -964,7 +961,7 @@ public final class StaffTracker extends JavaPlugin {
 			staffInd.put(p.getName(), rec);
 			this.pushRecordToDB(rec);
 		} else {
-
+			//Check if staffOnlySocialSpy is enabled, and enforce it if it is!
 			if(!isStaff(p)){
 				if(pluginConf.getBoolean("extra.staffOnlySocialSpy")){
 					if(pluginConf.getBoolean("plugin.useessentials")){
@@ -990,7 +987,7 @@ public final class StaffTracker extends JavaPlugin {
 				//FIXEDIT : catch it here, flag it, run a temporary copy, and then merge with the DB version once we can connect.
 				if(r != null){
 					if(debug) Log.info("DEBUG : loggedin : " + (r.getLoggedIn() ? "yes" : "no") + " server : " + r.getServer()); 
-					if(r.getLoggedIn() && r.getServer() != StaffTracker.MCServerName){
+					if(r.getLoggedIn() && r.getServer().equals(MCServerName)){
 						//:facepalm: SOMEONE is logged in on another server.
 						//So, we ghost this record, and wait for the other log in session
 						//to terminate, since its likely either a crash (which will update
@@ -1004,20 +1001,8 @@ public final class StaffTracker extends JavaPlugin {
 
 					//If we're using staff Groups, it'd be nice to add which group they're in
 					//to the staff record....
-					String sgroup = "";
-					if(pluginConf.getBoolean("stafftracker.staffGroup")){
-						List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
-						Iterator<String> groupItr = pgroups.iterator();
-						while(groupItr.hasNext())  {
-							sgroup = groupItr.next();
-							if(this.staffGroups.contains(sgroup)){
-								break;
-							}
-							sgroup = "";
-						}
-					}
 
-					r.setGroup(sgroup);
+					r.setGroup(this.getStaffGroup(p));
 					r.setLoggedIn(true);
 
 					//At this point, we can pass this record off to update record to
@@ -1035,20 +1020,7 @@ public final class StaffTracker extends JavaPlugin {
 
 			if(r == null){
 
-				//If we're using staff Groups, it'd be nice to add which group they're in
-				//to the staff record....
-				String sgroup = "";
-				if(pluginConf.getBoolean("stafftracker.staffGroup")){
-					List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
-					Iterator<String> groupItr = pgroups.iterator();
-					while(groupItr.hasNext())  {
-						sgroup = groupItr.next();
-						if(this.staffGroups.contains(sgroup)){
-							break;
-						}
-						sgroup = "";
-					}
-				}
+				String sgroup = this.getStaffGroup(p);
 
 				//insert our group. (if any)
 				if(sgroup == "")
@@ -1477,17 +1449,25 @@ public final class StaffTracker extends JavaPlugin {
 		}
 		if(pluginConf.getBoolean("stafftracker.staffGroup")){
 			try{
-				List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
-				String sgroup = "";
-
-				Iterator<String> groupItr = pgroups.iterator();
-				while(groupItr.hasNext())  {
-					sgroup = groupItr.next();
-
-					if(this.staffGroups.contains(sgroup)){
-						return true;
+				if(this.permission != null){
+					String[] pgroups = permission.getGroups();
+					
+					for(String s : pgroups){
+						if(this.staffGroups.contains(s))
+							return true;
 					}
+				} else if(this.essPerms != null){
 
+					List<String> pgroups = essPerms.getGroups(p);
+					
+					for(String s : pgroups){
+						if(this.staffGroups.contains(s))
+							return true;
+					}
+					
+				} else {
+					//Never likely to get here, but just in case...
+					Log.severe("Failed to get Essentials or Vault permissions provider somehow, but we're configured for groups! We likely can't even tell whos staff at all - CHECK YOUR CONFIGS PLZ.");
 				}
 			} catch(Exception e){
 				//Well, we're probably not using a proper version of 
@@ -1552,36 +1532,8 @@ public final class StaffTracker extends JavaPlugin {
 
 		//If we're using staff Groups, it'd be nice to update which group they're in
 		//to the staff record....
-		String sgroup = "Staff";
-		if(pluginConf.getBoolean("stafftracker.staffGroup")){
-			if(this.permission != null){
-				String pgroups[] = permission.getPlayerGroups(p);
-				for(String s : pgroups){
-					if(debug) Log.info("Checking vault perm group " + s);
-						if(this.staffGroups.contains(s)){
-							if(debug) Log.info("Yup.");
-						
-							sgroup = s;
-							break;
-						}
-					if(debug) Log.info("Nope.");
-				}
-			} else {
-				List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
-				for(String s : pgroups){
-					if(debug) Log.info("Checking essentials perm group " + s);
-						if(this.staffGroups.contains(s)){
-							if(debug) Log.info("Yup.");
-						
-							sgroup = s;
-							break;
-						}
-					if(debug) Log.info("Nope.");
-				}
-			}
-		}
 
-		r.setGroup(sgroup);	
+		r.setGroup(this.getStaffGroup(p));	
 		
 		//finally, update the record. otherwise, what's the point, right?
 		staffInd.put(p.getName(), r);
@@ -1703,4 +1655,44 @@ public final class StaffTracker extends JavaPlugin {
 		
 		return ret;
 	}
+	
+	private String getStaffGroup(Player p){
+		String sgroup = "Staff";
+		if(pluginConf.getBoolean("stafftracker.staffGroup")){
+			if(this.permission != null){
+				String pgroups[] = permission.getPlayerGroups(p);
+
+				for(String s : pgroups){
+					if(debug) Log.info("Checking vault perm group " + s);
+					if(this.staffGroups.contains(s)){
+						if(debug) Log.info("Yup.");
+
+						sgroup = s;
+						break;
+					}
+					if(debug) Log.info("Nope.");
+				}
+			} else if(this.essentials != null && this.essentials.getPermissionsHandler() != null) {
+				List<String> pgroups = essentials.getPermissionsHandler().getGroups(p);
+				for(String s : pgroups){
+					if(debug) Log.info("Checking essentials perm group " + s);
+					if(this.staffGroups.contains(s)){
+						if(debug) Log.info("Yup.");
+
+						sgroup = s;
+						break;
+					}
+					if(debug) Log.info("Nope.");
+				}
+			} else {
+				Log.severe("Tried to get the permissions group provider - but failed!");
+			}
+		} else {
+			Log.warning("Request for staff group list recieved, however we're not configured to use staff groups.");
+		}
+
+		return sgroup;
+
+	}
+	
 }
